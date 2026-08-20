@@ -5,7 +5,7 @@ import { useState } from 'react';
 const AUDIENCES = [
   { id: 'teen', label: 'Teen' },
   { id: 'adult', label: 'Adult' },
-  { id: 'older_adult', label: 'Older adult' },
+  { id: 'senior', label: 'Senior (65+)' },
   { id: 'caregiver', label: 'Caregiver' },
 ] as const;
 

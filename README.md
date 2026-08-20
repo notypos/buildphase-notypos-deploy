@@ -27,8 +27,8 @@ consumer versions draw far less engagement than the professional ones. People ma
 supplement decisions at the shelf, from label marketing, rather than from evidence.
 ClearLabel puts that same NIH evidence behind a question box and a phone camera.
 
-**Who it serves:** consumers making supplement decisions — teens, adults, older
-adults, and caregivers. Spanish answers retrieve NIH's own Spanish-language fact
+**Who it serves:** consumers making supplement decisions — teens, adults, seniors,
+and caregivers. Spanish answers retrieve NIH's own Spanish-language fact
 sheets rather than machine-translating the English ones.
 
 ## Features
@@ -38,7 +38,7 @@ sheets rather than machine-translating the English ones.
   cover the question instead of answering anyway.
 - **Evidence cards** — answers render as *What the evidence shows* / *What's still
   uncertain* / *What the marketing claims*.
-- **Audience modes** — Teen · Adult · Older Adult · Caregiver, plus Spanish.
+- **Audience modes** — Teen · Adult · Senior · Caregiver, plus Spanish.
 - **Claim Check** — paste a marketing claim, get an evidence-strength verdict with citations.
 - **My Stack** — save what you take, plus medications and life stage. An agent runs a
   multi-step scan for upper-limit and interaction flags.

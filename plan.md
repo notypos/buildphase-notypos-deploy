@@ -51,7 +51,7 @@ _against_ this problem statement as an academic project, not as a competition en
 | ----------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------ |
 | **Adults** making everyday supplement decisions | Is this worth taking? Is this dose safe?         | Cited answers at an 8th–10th grade reading level                               |
 | **Teens / young adults**                        | Encounter supplement claims through social media | Teen reading mode; Claim Check for viral claims                                |
-| **Older adults**                                | Polypharmacy; narrower safety margins            | Older-adult mode foregrounds interactions and upper limits                     |
+| **Seniors**                                | Polypharmacy; narrower safety margins            | Senior mode foregrounds interactions and upper limits                     |
 | **Caregivers**                                  | Managing someone else's regimen                  | Caregiver mode; Decision Card to bring to appointments                         |
 | **Spanish-speaking users**                      | Health-equity gap in supplement literacy         | Answers retrieved from NIH's _own_ Spanish fact sheets, not machine-translated |
 | **Clinicians** (indirect)                       | Patients arrive with unsourced beliefs           | Decision Card gives patients sourced questions to ask                          |

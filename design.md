@@ -195,7 +195,7 @@ personal: your stack, your medications, your history.
 │  Plain-language answers about dietary supplements,       │
 │  grounded in NIH fact sheets.                            │
 │                                                          │
-│  (Teen) (•Adult•) (Older adult) (Caregiver) │ (English)  │
+│  (Teen) (•Adult•) (Senior 65+) (Caregiver) │ (English)  │
 │                                                          │
 │  ┌────────────────────────────────────┐  ┌───────────┐   │
 │  │ Ask about a supplement…            │  │    Ask    │   │
@@ -374,7 +374,7 @@ so a past answer can be re-checked against its real evidence.
 }
 ```
 
-`question` 3–500 chars · `audience` ∈ `teen|adult|older_adult|caregiver` ·
+`question` 3–500 chars · `audience` ∈ `teen|adult|senior|caregiver` ·
 `language` ∈ `en|es`. Validated by zod; unknown fields rejected.
 
 **Response 200 — grounded**
@@ -527,11 +527,11 @@ prompt changes:
 |---|---|---|
 | Teen | Grade 6–8 | Short sentences, concrete, no jargon, no condescension |
 | Adult | Grade 8–10 | Plain language, jargon glossed |
-| Older adult | Grade 6–8 | One idea per sentence; foregrounds interactions and kidney/liver notes |
+| Senior (65+) | Grade 6–8 | One idea per sentence; foregrounds interactions and kidney/liver notes |
 | Caregiver | Grade 8–10 | Framed around deciding for someone else and what to raise with a clinician |
 
 Verified in practice: for "is zinc good for colds?" teen mode opens *"Maybe a
-little."*; older-adult mode surfaces the 40 mg upper limit, copper depletion, and
+little."*; senior mode surfaces the 40 mg upper limit, copper depletion, and
 antibiotic/diuretic interactions. Same retrieved chunks.
 
 ### Spanish

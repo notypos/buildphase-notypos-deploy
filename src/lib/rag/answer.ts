@@ -3,14 +3,14 @@ import { z } from 'zod';
 import { generateStructured } from '@/lib/llm';
 import { retrieve, formatContext, toCitations, dedupeCitations, type DisplayCitation } from './retrieve';
 
-export const AUDIENCES = ['teen', 'adult', 'older_adult', 'caregiver'] as const;
+export const AUDIENCES = ['teen', 'adult', 'senior', 'caregiver'] as const;
 export type Audience = (typeof AUDIENCES)[number];
 
 const AUDIENCE_STYLE: Record<Audience, string> = {
   teen: 'A 14-17 year old. Grade 6-8 reading level. Short sentences, concrete examples, no condescension. Skip clinical jargon entirely.',
   adult: 'A general adult reader. Grade 8-10 reading level. Plain language, no jargon without a gloss.',
-  older_adult:
-    'An adult over 65. Grade 6-8 reading level. Larger conceptual chunks, one idea per sentence. Foreground medication interactions and kidney/liver considerations where the sources mention them.',
+  senior:
+    'An adult aged 65 or older. Grade 6-8 reading level. Larger conceptual chunks, one idea per sentence. Foreground medication interactions and kidney/liver considerations where the sources mention them.',
   caregiver:
     'Someone managing supplements for another person. Grade 8-10 reading level. Frame guidance around observing and deciding for someone else, and around what to raise with a clinician.',
 };
