@@ -52,11 +52,12 @@ sheets rather than machine-translating the English ones.
 
 | Concern                     | Approach                                                                          |
 | --------------------------- | --------------------------------------------------------------------------------- |
-| Retrieval                   | Gemini `text-embedding-004` (768-dim) into Postgres `pgvector`, HNSW cosine index |
+| Retrieval | Gemini `gemini-embedding-001`, truncated to 768 dims and unit-normalized, into Postgres `pgvector` with an HNSW cosine index |
 | Query vs document embedding | `RETRIEVAL_QUERY` for queries, `RETRIEVAL_DOCUMENT` for chunks                    |
 | Generation                  | `gpt-5.4` via FAU Trussed (default); Gemini direct as fallback                    |
 | Structured output           | zod schemas validated in `generateStructured()`, one reprompt on failure          |
 | Grounding                   | answers are generated only from retrieved chunks; chunk ids stored per message    |
+| Refusal | below a cosine floor of 0.66 the app refuses and never calls the model |
 | Failure handling            | 429 → 1/2/4s backoff · 5xx → 5/10/20s backoff · wall-clock timeouts               |
 
 ## Tech stack
@@ -94,6 +95,29 @@ re-embedding.
 
 ```bash
 npm run dev
+```
+
+## Retrieval quality
+
+`scripts/ask.ts --suite` runs ten questions — six the NIH sheets cover, four they
+don't — and reports the similarity of each against the live corpus.
+
+Measured on 579 chunks across 40 consumer fact sheets:
+
+| Group | Similarity range |
+|---|---|
+| In-scope questions | 0.755 – 0.800 |
+| Out-of-scope questions | 0.503 – 0.630 |
+
+The groups separate cleanly, so `RETRIEVAL_MIN_SIMILARITY` is set to **0.66** —
+above every off-topic question, below every in-scope one. Re-run the suite after
+any change to chunking or the embedding model; the threshold is only valid for
+the corpus it was measured against.
+
+```bash
+npm run dev                                  # terminal 1
+npx tsx scripts/ask.ts --suite               # terminal 2
+npx tsx scripts/ask.ts --audience teen "is zinc good for colds?"
 ```
 
 ## Data source
