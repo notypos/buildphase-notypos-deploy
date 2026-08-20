@@ -2,25 +2,23 @@
 
 Plain-language answers about dietary supplements, grounded in NIH Office of Dietary Supplements fact sheets.
 
-**Student:** : Ike Machover
-**Email:** : imachover2013@fau.edu
-**Z number** : Z23283013
+**Student:** _TODO: full name_ · _TODO: FAU email_ · _TODO: Z-number_
 **Sponsor:** NIH Office of Dietary Supplements, via HeroX / NASA Tournament Lab — Lead Problem, FAU AI HootCamp Summer 2026
 **Mentorship:** Dr. David Jaramillo, LexisNexis Risk Solutions
 
 ## Artifacts
 
-| Artifact                  | Link                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------ |
-| Deployed application      | _TODO_                                                                         |
-| Demo video (3–5 min)      | _TODO_                                                                         |
-| Pitch deck                | _TODO_                                                                         |
+| Artifact | Link |
+|---|---|
+| Deployed application | _TODO_ |
+| Demo video (3–5 min) | _TODO_ |
+| Pitch deck | _TODO_ |
 | One-page showcase summary | [`docs/ClearLabel_Showcase_Intent.pptx`](docs/ClearLabel_Showcase_Intent.pptx) |
-| Project plan              | [`plan.md`](plan.md) — _TODO_                                                  |
-| Technical design          | [`design.md`](design.md) — _TODO_                                              |
-| Database schema           | [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql)       |
-| Retrieval evaluation      | _TODO: `docs/evaluation.md`_                                                   |
-| Cost analysis             | _TODO: `docs/costs.md`_                                                        |
+| Project plan | [`plan.md`](plan.md) |
+| Technical design | [`design.md`](design.md) |
+| Database schema | [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) |
+| Retrieval evaluation | _TODO: `docs/evaluation.md`_ |
+| Cost analysis | _TODO: `docs/costs.md`_ |
 
 ## The problem
 
@@ -38,8 +36,8 @@ sheets rather than machine-translating the English ones.
 - **Ask** — conversational Q&A over the ODS corpus. Every answer cites its source
   fact sheet and section. Below a retrieval-similarity floor the app says NIH doesn't
   cover the question instead of answering anyway.
-- **Evidence cards** — answers render as _What the evidence shows_ / _What's still
-  uncertain_ / _What the marketing claims_.
+- **Evidence cards** — answers render as *What the evidence shows* / *What's still
+  uncertain* / *What the marketing claims*.
 - **Audience modes** — Teen · Adult · Older Adult · Caregiver, plus Spanish.
 - **Claim Check** — paste a marketing claim, get an evidence-strength verdict with citations.
 - **My Stack** — save what you take, plus medications and life stage. An agent runs a
@@ -50,15 +48,14 @@ sheets rather than machine-translating the English ones.
 
 ## AI integration
 
-| Concern                     | Approach                                                                          |
-| --------------------------- | --------------------------------------------------------------------------------- |
-| Retrieval | Gemini `gemini-embedding-001`, truncated to 768 dims and unit-normalized, into Postgres `pgvector` with an HNSW cosine index |
-| Query vs document embedding | `RETRIEVAL_QUERY` for queries, `RETRIEVAL_DOCUMENT` for chunks                    |
-| Generation                  | `gpt-5.4` via FAU Trussed (default); Gemini direct as fallback                    |
-| Structured output           | zod schemas validated in `generateStructured()`, one reprompt on failure          |
-| Grounding                   | answers are generated only from retrieved chunks; chunk ids stored per message    |
-| Refusal | below a cosine floor of 0.66 the app refuses and never calls the model |
-| Failure handling            | 429 → 1/2/4s backoff · 5xx → 5/10/20s backoff · wall-clock timeouts               |
+| Concern | Approach |
+|---|---|
+| Retrieval | Gemini `text-embedding-004` (768-dim) into Postgres `pgvector`, HNSW cosine index |
+| Query vs document embedding | `RETRIEVAL_QUERY` for queries, `RETRIEVAL_DOCUMENT` for chunks |
+| Generation | `gpt-5.4` via FAU Trussed (default); Gemini direct as fallback |
+| Structured output | zod schemas validated in `generateStructured()`, one reprompt on failure |
+| Grounding | answers are generated only from retrieved chunks; chunk ids stored per message |
+| Failure handling | 429 → 1/2/4s backoff · 5xx → 5/10/20s backoff · wall-clock timeouts |
 
 ## Tech stack
 
@@ -95,29 +92,6 @@ re-embedding.
 
 ```bash
 npm run dev
-```
-
-## Retrieval quality
-
-`scripts/ask.ts --suite` runs ten questions — six the NIH sheets cover, four they
-don't — and reports the similarity of each against the live corpus.
-
-Measured on 579 chunks across 40 consumer fact sheets:
-
-| Group | Similarity range |
-|---|---|
-| In-scope questions | 0.755 – 0.800 |
-| Out-of-scope questions | 0.503 – 0.630 |
-
-The groups separate cleanly, so `RETRIEVAL_MIN_SIMILARITY` is set to **0.66** —
-above every off-topic question, below every in-scope one. Re-run the suite after
-any change to chunking or the embedding model; the threshold is only valid for
-the corpus it was measured against.
-
-```bash
-npm run dev                                  # terminal 1
-npx tsx scripts/ask.ts --suite               # terminal 2
-npx tsx scripts/ask.ts --audience teen "is zinc good for colds?"
 ```
 
 ## Data source
