@@ -6,10 +6,22 @@ import { LlmError } from '@/lib/llm';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+// Session-only health context: age, sex, and life stage only — what NIH
+// reference tables are keyed to. Accepted, used for this request, never
+// persisted and never logged. Conditions and medications are deliberately not
+// collected at all.
+const HealthContextSchema = z.object({
+  ageYears: z.number().int().min(0).max(120).nullable(),
+  sex: z.enum(['female', 'male']).nullable(),
+  pregnant: z.boolean(),
+  breastfeeding: z.boolean(),
+});
+
 const BodySchema = z.object({
   question: z.string().min(3).max(500),
-  audience: z.enum(AUDIENCES).default('adult'),
+  audience: z.enum(AUDIENCES).default('standard'),
   language: z.enum(['en', 'es']).default('en'),
+  healthContext: HealthContextSchema.optional(),
 });
 
 // Simple in-memory limiter. Fine for one Vercel instance and for the demo;
@@ -55,6 +67,7 @@ export async function POST(req: Request) {
     const result = await ask(parsed.data.question, {
       audience: parsed.data.audience,
       language: parsed.data.language,
+      healthContext: parsed.data.healthContext,
     });
     return NextResponse.json(result);
   } catch (err) {
@@ -62,7 +75,9 @@ export async function POST(req: Request) {
       console.error(`[ask] ${err.message}`);
       return NextResponse.json({ error: err.userMessage }, { status: err.status ?? 502 });
     }
-    console.error('[ask] unexpected', err);
+    // Deliberately does not log the request body: it may carry conditions and
+    // medications, and "we don't store health data" has to include the logs.
+    console.error('[ask] unexpected', err instanceof Error ? err.message : 'unknown');
     return NextResponse.json(
       { error: 'Something went wrong on our side. Try again.' },
       { status: 500 },

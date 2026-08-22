@@ -129,3 +129,87 @@ export function dedupeCitations(citations: Citation[], used?: number[]): Display
   }
   return [...bySection.values()].sort((a, b) => a.indices[0] - b.indices[0]);
 }
+
+
+/**
+ * Sections that carry condition and drug-interaction guidance.
+ *
+ * Semantic search on "is vitamin K safe?" reliably returns the overview and
+ * dosage sections and often misses the interactions section entirely — the
+ * question doesn't mention drugs, so nothing in it is close to that text. Rather
+ * than embedding the reader's medication list to fix that (which would ship it
+ * to a provider that trains on free-tier input), fetch these sections directly
+ * from whichever fact sheets the semantic pass already landed on. No extra
+ * embedding call, and the sections are guaranteed present when they exist.
+ */
+const SAFETY_SECTION_PATTERNS = [
+  '%interact%',      // "Does X interact with medications or other dietary supplements?"
+  '%harmful%',       // "Can X be harmful?"
+  '%health%',        // "What are some effects of X on health?"
+  '%not get enough%',// "What happens if I don't get enough X?"
+  '%getting enough%',// "Am I getting enough X?"
+];
+
+/**
+ * Pull safety and condition sections for the fact sheets a search landed on.
+ * Returns chunks not already in `existing`, capped so they cannot crowd out the
+ * semantically-matched content.
+ */
+export async function retrieveSafetySections(
+  existing: RetrievedChunk[],
+  { limit = 6 }: { limit?: number } = {},
+): Promise<RetrievedChunk[]> {
+  if (existing.length === 0) return [];
+
+  // Only the sheets the question is actually about — the top two by best match.
+  const bySheet = new Map<string, number>();
+  for (const c of existing) {
+    bySheet.set(c.fact_sheet_id, Math.max(bySheet.get(c.fact_sheet_id) ?? 0, c.similarity));
+  }
+  const sheetIds = [...bySheet.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([id]) => id);
+
+  const have = new Set(existing.map((c) => c.chunk_id));
+  const supabase = createServiceClient();
+
+  const { data, error } = await supabase
+    .from('chunks')
+    .select('id, fact_sheet_id, section, subsection, content, fact_sheets!inner(slug, supplement, source_url)')
+    .in('fact_sheet_id', sheetIds)
+    .or(SAFETY_SECTION_PATTERNS.map((p) => `section.ilike.${p}`).join(','))
+    .limit(30);
+
+  if (error) {
+    // Non-fatal: the answer is still grounded in the semantic results.
+    console.warn(`[retrieval] safety-section fetch failed: ${error.message}`);
+    return [];
+  }
+
+  type Row = {
+    id: string;
+    fact_sheet_id: string;
+    section: string | null;
+    subsection: string | null;
+    content: string;
+    fact_sheets: { slug: string; supplement: string; source_url: string } | null;
+  };
+
+  return ((data ?? []) as unknown as Row[])
+    .filter((r) => !have.has(r.id) && r.fact_sheets)
+    .slice(0, limit)
+    .map((r) => ({
+      chunk_id: r.id,
+      fact_sheet_id: r.fact_sheet_id,
+      slug: r.fact_sheets!.slug,
+      supplement: r.fact_sheets!.supplement,
+      section: r.section,
+      subsection: r.subsection,
+      content: r.content,
+      source_url: r.fact_sheets!.source_url,
+      // Not semantically scored — included structurally, so mark it as such
+      // rather than inventing a similarity that would distort the threshold.
+      similarity: 0,
+    }));
+}

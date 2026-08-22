@@ -2,7 +2,7 @@
  * Exercise the live /api/ask route. Requires `npm run dev` in another terminal.
  *
  *   npx tsx scripts/ask.ts "how much vitamin C do I need?"
- *   npx tsx scripts/ask.ts --audience teen "is zinc good for colds?"
+ *   npx tsx scripts/ask.ts --audience simple "is zinc good for colds?"
  *   npx tsx scripts/ask.ts --suite      threshold-tuning suite
  *
  * Hits HTTP rather than importing the lib directly: those modules are
@@ -21,7 +21,7 @@ interface AskResponse {
   error?: string;
 }
 
-async function call(question: string, audience = 'adult', language = 'en'): Promise<AskResponse> {
+async function call(question: string, audience = 'standard', language = 'en'): Promise<AskResponse> {
   const res = await fetch(`${BASE}/api/ask`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -108,7 +108,7 @@ async function main() {
   if (args.includes('--suite')) return suite();
 
   const ai = args.indexOf('--audience');
-  const audience = ai >= 0 ? args[ai + 1] : 'adult';
+  const audience = ai >= 0 ? args[ai + 1] : 'standard';
   const li = args.indexOf('--lang');
   const language = li >= 0 ? args[li + 1] : 'en';
   const question = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--audience' && args[i - 1] !== '--lang').join(' ');

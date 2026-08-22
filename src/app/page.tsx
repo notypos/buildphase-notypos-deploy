@@ -1,12 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import HealthContextPanel from '@/components/HealthContextPanel';
+import {
+  EMPTY_CONTEXT,
+  loadContext,
+  saveContext,
+  clearContext,
+  defaultReadingLevel,
+  hasAnyContext,
+  type HealthContext,
+} from '@/lib/health-context';
 
-const AUDIENCES = [
-  { id: 'teen', label: 'Teen' },
-  { id: 'adult', label: 'Adult' },
-  { id: 'senior', label: 'Senior (65+)' },
-  { id: 'caregiver', label: 'Caregiver' },
+const READING_LEVELS = [
+  { id: 'simple', label: 'Simple', hint: 'Shorter sentences, everyday words' },
+  { id: 'standard', label: 'Standard', hint: 'Normal adult reading level' },
 ] as const;
 
 const EXAMPLES = [
@@ -21,28 +29,31 @@ interface Citation {
   indices: number[];
   supplement: string;
   section: string | null;
-  subsection: string | null;
   url: string;
 }
 
 interface AskResult {
-  answer: { evidence: string; uncertainty: string; marketing: string; citationsUsed: number[] } | null;
+  answer: {
+    evidence: string;
+    uncertainty: string;
+    marketing: string;
+    forYou?: string;
+    healthConsiderations?: string;
+    medicationInteractions?: string;
+    citationsUsed: number[];
+  } | null;
   citations: Citation[];
   refused: boolean;
   refusalReason?: string;
   topSimilarity: number;
 }
 
-/** Render [1][2] markers as small superscript chips. */
 function withMarkers(text: string) {
   return text.split(/(\[\d+\])/g).map((part, i) => {
     const m = part.match(/^\[(\d+)\]$/);
     if (!m) return <span key={i}>{part}</span>;
     return (
-      <sup
-        key={i}
-        className="ml-0.5 rounded bg-teal-100 px-1 text-[0.65rem] font-semibold text-teal-800"
-      >
+      <sup key={i} className="ml-0.5 rounded bg-teal-100 px-1 text-[0.65rem] font-semibold text-teal-800">
         {m[1]}
       </sup>
     );
@@ -55,18 +66,24 @@ function Card({
   children,
 }: {
   title: string;
-  tone: 'evidence' | 'uncertain' | 'marketing';
+  tone: 'you' | 'evidence' | 'uncertain' | 'marketing' | 'considerations' | 'interactions';
   children: React.ReactNode;
 }) {
   const tones = {
+    you: 'bg-slate-900 text-white',
     evidence: 'bg-teal-50 text-teal-900',
     uncertain: 'bg-sky-50 text-sky-900',
     marketing: 'bg-amber-50 text-amber-900',
+    considerations: 'bg-violet-50 text-violet-900',
+    interactions: 'bg-rose-50 text-rose-900',
   };
   const labels = {
+    you: 'text-slate-300',
     evidence: 'text-teal-700',
     uncertain: 'text-sky-700',
     marketing: 'text-amber-700',
+    considerations: 'text-violet-700',
+    interactions: 'text-rose-700',
   };
   return (
     <section className={`rounded-xl p-5 ${tones[tone]}`}>
@@ -78,11 +95,22 @@ function Card({
 
 export default function Home() {
   const [question, setQuestion] = useState('');
-  const [audience, setAudience] = useState<string>('adult');
+  const [context, setContext] = useState<HealthContext>(EMPTY_CONTEXT);
+  const [levelOverride, setLevelOverride] = useState<string | null>(null);
   const [language, setLanguage] = useState<'en' | 'es'>('en');
   const [result, setResult] = useState<AskResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // sessionStorage is unavailable during SSR, so hydrate after mount.
+  useEffect(() => setContext(loadContext()), []);
+
+  const updateContext = (next: HealthContext) => {
+    setContext(next);
+    saveContext(next);
+  };
+
+  const readingLevel = levelOverride ?? defaultReadingLevel(context.ageYears);
 
   async function submit(q: string) {
     if (!q.trim() || loading) return;
@@ -93,7 +121,13 @@ export default function Home() {
       const res = await fetch('/api/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, audience, language }),
+        body: JSON.stringify({
+          question: q,
+          audience: readingLevel,
+          language,
+          // Session-only. The server uses it for this request and never stores it.
+          healthContext: hasAnyContext(context) ? context : undefined,
+        }),
       });
       const json = await res.json();
       if (!res.ok) setError(json.error ?? 'Something went wrong.');
@@ -110,19 +144,35 @@ export default function Home() {
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-5 py-10">
       <header className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight text-slate-900">ClearLabel</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+          Plain-language answers about dietary supplements
+        </h1>
         <p className="mt-1 text-slate-600">
-          Plain-language answers about dietary supplements, grounded in NIH fact sheets.
+          Grounded in NIH Office of Dietary Supplements fact sheets, with citations. No account
+          needed.
         </p>
       </header>
 
+      <HealthContextPanel
+        value={context}
+        onChange={updateContext}
+        onClear={() => {
+          clearContext();
+          setContext(EMPTY_CONTEXT);
+        }}
+      />
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {AUDIENCES.map((opt) => (
+        <span className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+          Reading level
+        </span>
+        {READING_LEVELS.map((opt) => (
           <button
             key={opt.id}
-            onClick={() => setAudience(opt.id)}
+            onClick={() => setLevelOverride(opt.id)}
+            title={opt.hint}
             className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
-              audience === opt.id
+              readingLevel === opt.id
                 ? 'bg-teal-700 text-white'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
@@ -130,6 +180,9 @@ export default function Home() {
             {opt.label}
           </button>
         ))}
+        {levelOverride === null && context.ageYears !== null && (
+          <span className="text-xs text-slate-400">set from your age</span>
+        )}
         <span className="mx-1 h-5 w-px bg-slate-200" />
         <button
           onClick={() => setLanguage(language === 'en' ? 'es' : 'en')}
@@ -205,6 +258,11 @@ export default function Home() {
 
       {a && (
         <div className="space-y-3">
+          {a.forYou && (
+            <Card title="Based on the information you provided" tone="you">
+              <p>{withMarkers(a.forYou)}</p>
+            </Card>
+          )}
           {a.evidence && (
             <Card title="What the evidence shows" tone="evidence">
               <p>{withMarkers(a.evidence)}</p>
@@ -218,6 +276,16 @@ export default function Home() {
           {a.marketing && (
             <Card title="What the marketing claims" tone="marketing">
               <p>{withMarkers(a.marketing)}</p>
+            </Card>
+          )}
+          {a.healthConsiderations && (
+            <Card title="Relevant health considerations" tone="considerations">
+              <p>{withMarkers(a.healthConsiderations)}</p>
+            </Card>
+          )}
+          {a.medicationInteractions && (
+            <Card title="Medication interactions" tone="interactions">
+              <p>{withMarkers(a.medicationInteractions)}</p>
             </Card>
           )}
 
@@ -250,8 +318,9 @@ export default function Home() {
       )}
 
       <footer className="mt-12 border-t border-slate-200 pt-5 text-xs leading-relaxed text-slate-500">
-        ClearLabel summarizes public information from the NIH Office of Dietary Supplements. It is not
-        medical advice and does not diagnose or treat. Talk to a clinician before changing what you take.
+        ClearLabel summarizes public information from the NIH Office of Dietary Supplements. It is
+        not medical advice and does not diagnose or treat. Talk to a clinician before changing what
+        you take.
       </footer>
     </main>
   );

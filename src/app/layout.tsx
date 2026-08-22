@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import Nav from '@/components/Nav';
 
 export const metadata: Metadata = {
   title: 'ClearLabel — supplement answers from NIH fact sheets',
@@ -10,7 +11,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-white text-slate-900 antialiased">{children}</body>
+      <body className="bg-white text-slate-900 antialiased">
+        <Nav />
+        {children}
+      </body>
     </html>
   );
 }

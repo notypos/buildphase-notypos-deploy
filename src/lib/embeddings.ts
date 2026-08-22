@@ -127,8 +127,32 @@ export async function embedDocuments(
   return out;
 }
 
+/**
+ * Markers that indicate health context has leaked into a retrieval query.
+ *
+ * The embedding provider's free tier trains on submitted content and states that
+ * human reviewers may read it. Questions and public NIH text are acceptable to
+ * send; a reader's age, sex, and life stage are not. The obvious "improvement" —
+ * embedding the question plus the reader's profile for better recall — is
+ * exactly what this exists to stop, so it fails loudly rather than silently.
+ */
+const CONTEXT_LEAK_MARKERS = ['The reader states:', 'healthContext', 'years old,'];
+
 /** Embed a single user query. Not paced — one request, on the request path. */
 export async function embedQuery(text: string): Promise<number[]> {
+  const leak = CONTEXT_LEAK_MARKERS.find((m) => text.includes(m));
+  if (leak) {
+    throw new Error(
+      `Refusing to embed: retrieval query contains health context ("${leak}"). ` +
+        'Health context goes to the generation provider only — never to embeddings.',
+    );
+  }
+  if (text.length > 1000) {
+    throw new Error(
+      `Refusing to embed: retrieval query is ${text.length} chars. A question this long ` +
+        'usually means profile data was concatenated in.',
+    );
+  }
   const [v] = await embedBatch([text], 'RETRIEVAL_QUERY');
   return v;
 }
