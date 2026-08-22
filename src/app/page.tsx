@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import HealthContextPanel from '@/components/HealthContextPanel';
+import { createClient } from '@/lib/supabase/client';
 import {
   EMPTY_CONTEXT,
   loadContext,
@@ -40,6 +42,7 @@ interface AskResult {
     forYou?: string;
     healthConsiderations?: string;
     medicationInteractions?: string;
+    questionsForClinician?: string[];
     citationsUsed: number[];
   } | null;
   citations: Citation[];
@@ -101,9 +104,42 @@ export default function Home() {
   const [result, setResult] = useState<AskResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  const [asked, setAsked] = useState('');
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // sessionStorage is unavailable during SSR, so hydrate after mount.
   useEffect(() => setContext(loadContext()), []);
+
+  useEffect(() => {
+    createClient()
+      .auth.getUser()
+      .then(({ data }) => setSignedIn(!!data.user))
+      .catch(() => setSignedIn(false));
+  }, []);
+
+  async function saveCard() {
+    if (!result?.answer || saveState === 'saving') return;
+    setSaveState('saving');
+    const { citationsUsed, questionsForClinician, ...guidance } = result.answer;
+    void citationsUsed;
+    try {
+      const res = await fetch('/api/cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: asked.slice(0, 160),
+          question: asked,
+          guidance,
+          citations: result.citations,
+          questionsForClinician,
+        }),
+      });
+      setSaveState(res.ok ? 'saved' : 'error');
+    } catch {
+      setSaveState('error');
+    }
+  }
 
   const updateContext = (next: HealthContext) => {
     setContext(next);
@@ -117,6 +153,8 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setSaveState('idle');
+    setAsked(q);
     try {
       const res = await fetch('/api/ask', {
         method: 'POST',
@@ -288,6 +326,51 @@ export default function Home() {
               <p>{withMarkers(a.medicationInteractions)}</p>
             </Card>
           )}
+
+          {a.questionsForClinician && a.questionsForClinician.length > 0 && (
+            <section className="rounded-xl border border-slate-300 border-dashed p-5">
+              <h3 className="mb-3 text-xs font-bold tracking-wide text-slate-500 uppercase">
+                Worth asking a clinician
+              </h3>
+              <ul className="space-y-1.5 text-[0.95rem] text-slate-700">
+                {a.questionsForClinician.map((q) => (
+                  <li key={q} className="flex gap-2">
+                    <span className="text-slate-400">—</span>
+                    {q}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <div className="flex items-center gap-3 py-1">
+            {signedIn ? (
+              <>
+                <button
+                  onClick={saveCard}
+                  disabled={saveState === 'saving' || saveState === 'saved'}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:bg-slate-300"
+                >
+                  {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save this'}
+                </button>
+                {saveState === 'saved' && (
+                  <Link href="/cards" className="text-sm font-medium text-teal-700 hover:underline">
+                    View saved cards →
+                  </Link>
+                )}
+                {saveState === 'error' && (
+                  <span className="text-sm text-red-700">Could not save. Try again.</span>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">
+                <Link href="/login" className="font-medium text-teal-700 hover:underline">
+                  Sign in
+                </Link>{' '}
+                to save this and come back to it later.
+              </p>
+            )}
+          </div>
 
           {result!.citations.length > 0 && (
             <section className="rounded-xl border border-slate-200 p-5">

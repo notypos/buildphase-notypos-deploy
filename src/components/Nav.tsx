@@ -16,6 +16,9 @@ export default async function Nav() {
               <Link href="/stack" className="text-slate-600 hover:text-teal-700">
                 My Stack
               </Link>
+              <Link href="/cards" className="text-slate-600 hover:text-teal-700">
+                Saved
+              </Link>
               <span className="hidden text-slate-400 sm:inline">{user.email}</span>
               <form action="/auth/signout" method="post">
                 <button type="submit" className="text-slate-600 hover:text-teal-700">

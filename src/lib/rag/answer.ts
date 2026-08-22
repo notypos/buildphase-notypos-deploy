@@ -73,6 +73,13 @@ export const AnswerSchema = z.object({
     .describe(
       'Medications or drug classes the SOURCES list as interacting, named as the sources name them. Omit when the sources list none.',
     ),
+  questionsForClinician: z
+    .array(z.string())
+    .max(4)
+    .optional()
+    .describe(
+      'Up to 4 short, specific questions the reader could ask a clinician, each arising from something in the context (an interaction, an upper limit, a condition). Not generic advice. Omit when the sources support none.',
+    ),
   citationsUsed: z.array(z.number().int().positive()).describe('Context numbers actually cited above.'),
 });
 
@@ -114,7 +121,12 @@ status — write "ODS notes that people with X..." and never "because you have X
 
 "medicationInteractions" — drugs or drug classes the SOURCES list as interacting, named as
 the sources name them. Omit when the sources list none. Never infer an interaction from
-pharmacological reasoning: if it is not in the context, it does not go in the field.`;
+pharmacological reasoning: if it is not in the context, it does not go in the field.
+
+"questionsForClinician" — short, specific questions this reader could raise at an
+appointment, each traceable to something in the context: an interaction the sources list, an
+upper limit they are near, a condition the sources connect to the nutrient. Not generic
+filler like "ask if this is right for me". Omit the field when the context supports none.`;
 
 export async function ask(
   question: string,
@@ -157,7 +169,8 @@ Context:
 ${formatContext(allChunks)}
 
 Return JSON with keys: evidence, uncertainty, marketing, forYou (optional),
-healthConsiderations (optional), medicationInteractions (optional), citationsUsed.`,
+healthConsiderations (optional), medicationInteractions (optional),
+questionsForClinician (optional), citationsUsed.`,
     temperature: 0.2,
     maxTokens: 2048,
   });

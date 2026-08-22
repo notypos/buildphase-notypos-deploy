@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /** Routes that require a signed-in user. Ask stays public by design. */
-const PROTECTED = ['/stack', '/history', '/account'];
+const PROTECTED = ['/stack', '/cards', '/account'];
 
 /**
  * Refreshes the Supabase session cookie on every request and gates protected
