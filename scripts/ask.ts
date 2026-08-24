@@ -4,13 +4,20 @@
  *   npx tsx scripts/ask.ts "how much vitamin C do I need?"
  *   npx tsx scripts/ask.ts --audience simple "is zinc good for colds?"
  *   npx tsx scripts/ask.ts --suite      threshold-tuning suite
+ *   npx tsx scripts/ask.ts --suite --base https://your-app.vercel.app
  *
  * Hits HTTP rather than importing the lib directly: those modules are
  * server-only and depend on next/headers, which doesn't exist outside Next.
  */
 import './env';
 
-const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+// --base wins so the same suite can be pointed at a deployment:
+//   npx tsx scripts/ask.ts --suite --base https://your-app.vercel.app
+const baseArg = process.argv.indexOf('--base');
+const BASE =
+  (baseArg >= 0 ? process.argv[baseArg + 1] : undefined) ??
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  'http://localhost:3000';
 
 interface AskResponse {
   answer: { evidence: string; uncertainty: string; marketing: string; citationsUsed: number[] } | null;
@@ -111,7 +118,15 @@ async function main() {
   const audience = ai >= 0 ? args[ai + 1] : 'standard';
   const li = args.indexOf('--lang');
   const language = li >= 0 ? args[li + 1] : 'en';
-  const question = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--audience' && args[i - 1] !== '--lang').join(' ');
+  const question = args
+    .filter(
+      (a, i) =>
+        !a.startsWith('--') &&
+        args[i - 1] !== '--audience' &&
+        args[i - 1] !== '--lang' &&
+        args[i - 1] !== '--base',
+    )
+    .join(' ');
 
   if (!question) {
     console.log('Usage: npx tsx scripts/ask.ts "your question"   |   --suite');
