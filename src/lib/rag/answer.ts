@@ -10,6 +10,7 @@ import {
   type DisplayCitation,
 } from './retrieve';
 import type { HealthContext } from '@/lib/health-context';
+import { ageEmphasis, describeContext } from './prompt-context';
 
 export const AUDIENCES = ['simple', 'standard'] as const;
 export type Audience = (typeof AUDIENCES)[number];
@@ -20,19 +21,6 @@ const AUDIENCE_STYLE: Record<Audience, string> = {
   standard: 'Grade 8-10 reading level. Plain language; explain jargon the first time it appears.',
 };
 
-/**
- * Emphasis that follows from the reader's age rather than from a button they
- * clicked. Reading level is a presentation choice; whether interactions and
- * organ-function notes get foregrounded is a function of who is reading.
- */
-function ageEmphasis(ageYears: number | null | undefined): string {
-  if (ageYears == null) return '';
-  if (ageYears >= 65)
-    return ' Give extra prominence to medication interactions and to kidney or liver considerations wherever the sources mention them.';
-  if (ageYears < 18)
-    return ' Where the sources give amounts for this age group specifically, lead with those rather than adult amounts.';
-  return '';
-}
 
 /**
  * The three core fields come from the project problem statement: separate
@@ -184,20 +172,3 @@ questionsForClinician (optional), citationsUsed.`,
   };
 }
 
-/**
- * Render the session health context for the prompt.
- *
- * Age, sex, and life stage only — that is what NIH reference tables are keyed
- * to. This text goes to the generation provider; it must never be appended to a
- * retrieval query (guarded in src/lib/embeddings.ts).
- */
-function describeContext(ctx?: HealthContext): string {
-  if (!ctx) return '';
-  const bits: string[] = [];
-  if (ctx.ageYears !== null) bits.push(`${ctx.ageYears} years old`);
-  if (ctx.sex) bits.push(ctx.sex);
-  if (ctx.pregnant) bits.push('pregnant');
-  if (ctx.breastfeeding) bits.push('breastfeeding');
-  if (!bits.length) return '';
-  return `\nThe reader states: ${bits.join(', ')}. Use this only to surface the amounts and cautions the sources publish for that group.\n`;
-}
