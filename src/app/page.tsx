@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import HealthContextPanel from '@/components/HealthContextPanel';
 import { createClient } from '@/lib/supabase/client';
+import { storeAnswer, loadAnswer, markSaved, clearAnswer } from '@/lib/last-answer';
 import {
   EMPTY_CONTEXT,
   loadContext,
@@ -109,7 +110,19 @@ export default function Home() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // sessionStorage is unavailable during SSR, so hydrate after mount.
-  useEffect(() => setContext(loadContext()), []);
+  useEffect(() => {
+    setContext(loadContext());
+
+    // Restore the last answer so navigating away — including the round trip
+    // through sign-in — doesn't discard what the reader was looking at.
+    const stored = loadAnswer();
+    if (stored) {
+      setResult(stored.result as AskResult);
+      setQuestion(stored.question);
+      setAsked(stored.question);
+      if (stored.savedCardId) setSaveState('saved');
+    }
+  }, []);
 
   useEffect(() => {
     createClient()
@@ -117,6 +130,15 @@ export default function Home() {
       .then(({ data }) => setSignedIn(!!data.user))
       .catch(() => setSignedIn(false));
   }, []);
+
+  function reset() {
+    clearAnswer();
+    setResult(null);
+    setQuestion('');
+    setAsked('');
+    setError(null);
+    setSaveState('idle');
+  }
 
   async function saveCard() {
     if (!result?.answer || saveState === 'saving') return;
@@ -135,7 +157,13 @@ export default function Home() {
           questionsForClinician,
         }),
       });
-      setSaveState(res.ok ? 'saved' : 'error');
+      if (res.ok) {
+        const { id } = await res.json().catch(() => ({ id: '' }));
+        if (id) markSaved(id);
+        setSaveState('saved');
+      } else {
+        setSaveState('error');
+      }
     } catch {
       setSaveState('error');
     }
@@ -155,6 +183,7 @@ export default function Home() {
     setResult(null);
     setSaveState('idle');
     setAsked(q);
+    clearAnswer();
     try {
       const res = await fetch('/api/ask', {
         method: 'POST',
@@ -168,8 +197,12 @@ export default function Home() {
         }),
       });
       const json = await res.json();
-      if (!res.ok) setError(json.error ?? 'Something went wrong.');
-      else setResult(json);
+      if (!res.ok) {
+        setError(json.error ?? 'Something went wrong.');
+      } else {
+        setResult(json);
+        storeAnswer(q, json);
+      }
     } catch {
       setError('Could not reach the server. Check your connection and try again.');
     } finally {
@@ -291,6 +324,12 @@ export default function Home() {
             Outside the NIH fact sheets
           </h3>
           <p className="text-[0.95rem] leading-relaxed text-slate-700">{result.refusalReason}</p>
+          <button
+            onClick={reset}
+            className="mt-3 text-sm font-medium text-slate-500 hover:text-slate-900"
+          >
+            Clear answer
+          </button>
         </div>
       )}
 
@@ -364,12 +403,19 @@ export default function Home() {
               </>
             ) : (
               <p className="text-sm text-slate-500">
-                <Link href="/login" className="font-medium text-teal-700 hover:underline">
+                <Link href="/login?next=/" className="font-medium text-teal-700 hover:underline">
                   Sign in
                 </Link>{' '}
-                to save this and come back to it later.
+                to save this — your answer will still be here.
               </p>
             )}
+
+            <button
+              onClick={reset}
+              className="ml-auto text-sm font-medium text-slate-500 hover:text-slate-900"
+            >
+              Clear answer
+            </button>
           </div>
 
           {result!.citations.length > 0 && (

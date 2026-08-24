@@ -1,7 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { showsPregnancyOptions, summarize, hasAnyContext, type HealthContext, type Sex } from '@/lib/health-context';
+import {
+  showsPregnancyOptions,
+  summarize,
+  hasAnyContext,
+  normalizeContext,
+  type HealthContext,
+  type Sex,
+} from '@/lib/health-context';
 
 /**
  * Minimum-necessary personalization: only the fields NIH reference tables are
@@ -18,7 +25,9 @@ export default function HealthContextPanel({
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const set = (patch: Partial<HealthContext>) => onChange({ ...value, ...patch });
+  // Normalized on write: changing sex to male or clearing it must also clear
+  // pregnancy and breastfeeding, not merely hide the checkboxes.
+  const set = (patch: Partial<HealthContext>) => onChange(normalizeContext({ ...value, ...patch }));
 
   return (
     <div className="mb-4 rounded-xl border border-slate-200">

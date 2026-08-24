@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ask, AUDIENCES } from '@/lib/rag/answer';
+import { normalizeContext } from '@/lib/health-context';
 import { LlmError } from '@/lib/llm';
 
 export const runtime = 'nodejs';
@@ -67,7 +68,11 @@ export async function POST(req: Request) {
     const result = await ask(parsed.data.question, {
       audience: parsed.data.audience,
       language: parsed.data.language,
-      healthContext: parsed.data.healthContext,
+      // Re-normalized server-side: never trust the client to have kept
+      // pregnancy flags consistent with sex and age.
+      healthContext: parsed.data.healthContext
+        ? normalizeContext(parsed.data.healthContext)
+        : undefined,
     });
     return NextResponse.json(result);
   } catch (err) {

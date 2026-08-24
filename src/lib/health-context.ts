@@ -41,6 +41,21 @@ export const EMPTY_CONTEXT: HealthContext = {
 };
 
 
+/**
+ * Force the context into a self-consistent state.
+ *
+ * Pregnancy and breastfeeding cannot be true once sex is no longer female or the
+ * age is outside the childbearing range. Hiding the checkboxes in the UI is not
+ * enough: the values stay in state and get sent to the server, where they would
+ * steer life-stage matching. Applied on every change AND again server-side, so
+ * an inconsistent combination cannot exist regardless of which UI wrote it.
+ */
+export function normalizeContext(ctx: HealthContext): HealthContext {
+  const eligible = ctx.sex === 'female' && ctx.ageYears !== null && ctx.ageYears >= 10 && ctx.ageYears <= 60;
+  if (eligible) return ctx;
+  return { ...ctx, pregnant: false, breastfeeding: false };
+}
+
 /** Pregnancy/lactation only apply to some people; don't ask everyone. */
 export function showsPregnancyOptions(ctx: HealthContext): boolean {
   return ctx.sex === 'female' && ctx.ageYears !== null && ctx.ageYears >= 10 && ctx.ageYears <= 60;
