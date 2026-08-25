@@ -10,59 +10,108 @@ Plain-language answers about dietary supplements, grounded in NIH Office of Diet
 
 | Artifact                  | Link                                                                           |
 | ------------------------- | ------------------------------------------------------------------------------ |
-| Deployed application      | _TODO_                                                                         |
+| Deployed application      | <https://buildphase-notypos.vercel.app>                                       |
 | Demo video (3–5 min)      | _TODO_                                                                         |
 | Pitch deck                | _TODO_                                                                         |
 | One-page showcase summary | [`docs/ClearLabel_Showcase_Intent.pptx`](docs/ClearLabel_Showcase_Intent.pptx) |
 | Project plan              | [`plan.md`](plan.md)                                                           |
 | Technical design          | [`design.md`](design.md)                                                       |
-| Database schema           | [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql)       |
-| Retrieval evaluation      | _TODO: `docs/evaluation.md`_                                                   |
-| Cost analysis             | _TODO: `docs/costs.md`_                                                        |
+| Database schema           | [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), [`0002_privacy.sql`](supabase/migrations/0002_privacy.sql) |
+| Retrieval evaluation      | See [Retrieval quality](#retrieval-quality) below                             |
+| Production health check   | [`/api/health`](https://buildphase-notypos.vercel.app/api/health) · [`/health`](https://buildphase-notypos.vercel.app/health) |
 
 ## The problem
 
 NIH ODS publishes authoritative fact sheets on 100+ dietary supplements, but the
 consumer versions draw far less engagement than the professional ones. People make
 supplement decisions at the shelf, from label marketing, rather than from evidence.
-ClearLabel puts that same NIH evidence behind a question box and a phone camera.
+ClearLabel puts that same NIH evidence behind a question box.
 
-**Who it serves:** consumers making supplement decisions — teens, adults, seniors,
-and caregivers. Spanish answers retrieve NIH's own Spanish-language fact
-sheets rather than machine-translating the English ones.
+The retrieval pipeline is built to answer in Spanish from NIH's own
+Spanish-language fact sheets rather than machine-translating the English ones —
+but that corpus is not yet ingested, so the Spanish toggle currently returns a
+refusal for every question. See [Not yet built](#not-yet-built).
 
 ## Features
 
 - **Ask** — conversational Q&A over the ODS corpus. Every answer cites its source
-  fact sheet and section. Below a retrieval-similarity floor the app says NIH doesn't
-  cover the question instead of answering anyway.
-- **Evidence cards** — answers render as _What the evidence shows_ / _What's still
-  uncertain_ / _What the marketing claims_.
-- **Audience modes** — Teen · Adult · Senior · Caregiver, plus Spanish.
-- **Claim Check** — paste a marketing claim, get an evidence-strength verdict with citations.
-- **My Stack** — save what you take, plus medications and life stage. An agent runs a
-  multi-step scan for upper-limit and interaction flags.
-- **Label scan** — barcode/product lookup against the NIH Dietary Supplement Label
-  Database (DSLD), with vision-model OCR of the Supplement Facts panel as fallback.
-- **Decision Card** — printable summary with questions for your clinician.
+  fact sheet and section. Below a measured retrieval-similarity floor the app says
+  NIH doesn't cover the question instead of answering anyway — the model is never
+  called for a refusal.
+- **Answer cards** — answers render as _What the evidence shows_ / _What's still
+  uncertain_ / _What the marketing claims_, plus conditional sections when the
+  retrieved fact sheet has relevant safety, interaction, or dosage content.
+- **Reading level** — Simple or Standard, plus an English/Spanish toggle (Spanish
+  is UI-complete but not functional yet — see below).
+- **Session-only personalization** — age, sex, and pregnancy/breastfeeding status.
+  Lives in `sessionStorage` only: never written to a database, never logged, never
+  sent to an embedding call. Health conditions and medications are deliberately
+  **not collected at all** — see [Privacy design](#privacy-design).
+- **My Stack** — add and remove the supplements you take. A deterministic checker
+  computes
+  per-nutrient totals across products against NIH upper limits and flags
+  cumulative-dose and no-published-limit cases. No medications or conditions are
+  stored alongside it.
+- **Saved Decision Cards** — printable summaries with suggested clinician questions;
+  create, list, and delete, protected behind sign-in.
+- **Production health check** — `/api/health` verifies every configured secret
+  actually works against its real dependency (not just that it's present), without
+  ever echoing a key or a raw provider error.
+
+### Not yet built
+
+- **Spanish retrieval** — the language toggle and prompt plumbing exist, but the
+  Spanish (`DatosEnEspanol`) NIH fact sheets were never run through
+  `scripts/ingest.ts --lang es`. Every Spanish question currently searches an empty
+  set, falls below the similarity floor, and refuses.
+- **Label scanner** — DSLD barcode lookup with vision-model OCR fallback. Planned,
+  not implemented.
 
 ## AI integration
 
 | Concern                     | Approach                                                                                                                     |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | Retrieval                   | Gemini `gemini-embedding-001`, truncated to 768 dims and unit-normalized, into Postgres `pgvector` with an HNSW cosine index |
-| Query vs document embedding | `RETRIEVAL_QUERY` for queries, `RETRIEVAL_DOCUMENT` for chunks                                                               |
-| Generation                  | `gpt-5.4` via FAU Trussed (default); Gemini direct as fallback                                                               |
+| Query vs document embedding | `RETRIEVAL_QUERY` for queries, `RETRIEVAL_DOCUMENT` for chunks — embedding both the same way measurably hurts retrieval      |
+| Generation                  | `gpt-5.4` via FAU Trussed — the only generation path currently wired into the live app (Google Gemini direct exists as a registered provider option in `src/lib/llm/models.ts` but isn't an automatic fallback yet) |
 | Structured output           | zod schemas validated in `generateStructured()`, one reprompt on failure                                                     |
 | Grounding                   | answers are generated only from retrieved chunks; chunk ids stored per message                                               |
 | Refusal                     | below a measured cosine floor of 0.66 the app refuses and never calls the model                                              |
 | Failure handling            | 429 → 1/2/4s backoff · 5xx → 5/10/20s backoff · wall-clock timeouts                                                          |
 
+Embeddings are Gemini-only — Trussed doesn't expose a working `/embeddings`
+endpoint (verified: not on that key's model pool). Gemini's free tier trains on
+submitted content, which is why health context is never sent to an embedding call.
+
+## Privacy design
+
+Decided deliberately after evaluating HIPAA applicability: HIPAA does not apply
+(ClearLabel isn't a covered entity, and the sponsor's own guidelines call full
+HIPAA compliance unnecessary here). What does apply — the FTC Health Breach
+Notification Rule, and state laws like Washington's My Health My Data Act — cares
+about retention and disclosure, so that's what the design targets:
+
+| Data                                 | Where it lives                                  |
+| ------------------------------------ | ------------------------------------------------ |
+| Age, sex, pregnancy/breastfeeding    | `sessionStorage` only — never written, never logged |
+| Health conditions, medications       | **Never collected at all**                       |
+| Supplements (My Stack)               | Persisted                                         |
+| Saved Decision Cards                 | Persisted                                         |
+
+Conditions and medications aren't collected because ODS discusses a limited set of
+them — most fields would return "no specific guidance," a bad trade for a medical
+history. Condition and interaction information instead comes from the retrieved
+fact sheet itself. Migration `0002_privacy.sql` dropped the `medications` and
+`stack_scans` tables and `profiles.life_stage` outright, so this claim is
+verifiable by reading the schema rather than trusting a comment.
+
+The system prompt enforces: *"Based on the information you provided, ODS
+documents…"* — never *"based on your medical history, this is safe for you."*
+
 ## Tech stack
 
 Next.js 16 (App Router) · TypeScript · Tailwind 4 · Supabase (Auth/JWT, Postgres,
-pgvector, RLS) · Google Gemini (embeddings, vision) · FAU Trussed (generation) ·
-Vercel.
+pgvector, RLS) · Google Gemini (embeddings) · FAU Trussed (generation) · Vercel.
 
 ## Setup
 
@@ -71,8 +120,9 @@ npm install
 cp .env.example .env.local     # fill in Supabase + Gemini + Trussed keys
 ```
 
-Run `supabase/migrations/0001_init.sql` in the Supabase SQL editor. If
-`create extension vector` errors, enable **Vector** under Database → Extensions first.
+Run `supabase/migrations/0001_init.sql` then `0002_privacy.sql` in the Supabase SQL
+editor. If `create extension vector` errors, enable **Vector** under Database →
+Extensions first.
 
 Load the corpus:
 
@@ -81,7 +131,6 @@ npx tsx scripts/ingest.ts --dry --limit 2   # inspect parsing, no DB writes
 npx tsx scripts/ingest.ts --limit 20        # ingest 20 consumer sheets
 npx tsx scripts/ingest.ts                   # full English consumer corpus
 npx tsx scripts/ingest.ts --lang es         # NIH Spanish fact sheets
-npx tsx scripts/ingest.ts --audience health_professional
 ```
 
 Call the script with `npx tsx` rather than `npm run ingest --`. npm parses
@@ -98,7 +147,7 @@ npm run dev
 ## Retrieval quality
 
 `scripts/ask.ts --suite` runs ten questions — six the NIH sheets cover, four they
-don't — against the live index and reports each one's similarity.
+don't — against a live index and reports each one's similarity.
 
 Measured on 579 chunks across 40 consumer fact sheets:
 
@@ -113,17 +162,37 @@ corpus it was measured against; re-run the suite after any change to chunking or
 embedding model.
 
 ```bash
-npm run dev                                   # terminal 1
-npx tsx scripts/ask.ts --suite                # terminal 2
-npx tsx scripts/ask.ts --audience teen "is zinc good for colds?"
+npm run dev                                        # terminal 1
+npx tsx scripts/ask.ts --suite                      # terminal 2
+npx tsx scripts/ask.ts --base https://buildphase-notypos.vercel.app --suite
+```
+
+## Deterministic vs model
+
+The model never decides a number. `src/lib/nih/`:
+
+- `life-stage.ts` — parses scraped NIH labels ("Adults 51-70 years", "Pregnant
+  teens") into comparable ranges, scores by specificity, returns the applicable
+  row or `null`.
+- `units.ts` — mg/mcg/g conversion; IU is nutrient-specific and returns `null` for
+  unknown nutrients rather than guessing.
+- `stack-check.ts` — per-nutrient totals across products, dose vs upper limit;
+  flags cumulative-limit and no-published-limit cases explicitly.
+
+## Testing
+
+```bash
+npx tsx scripts/test-units.ts           # unit conversion assertions
+npx tsx scripts/test-life-stage.ts      # NIH row matching across ages/sexes/life stages
+npx tsx scripts/test-context-prompt.ts  # what health context actually reaches the model
+npx tsx scripts/ask.ts --suite          # retrieval threshold (needs npm run dev)
+npx tsx scripts/check.ts                # preflight: env, tables, RPC, live embedding
 ```
 
 ## Data source
 
 All content comes from the NIH Office of Dietary Supplements fact sheets at
 <https://ods.od.nih.gov/factsheets/list-all/> (U.S. government public domain).
-Product label data comes from the NIH Dietary Supplement Label Database,
-<https://dsld.od.nih.gov>.
 
 ## Disclaimer
 

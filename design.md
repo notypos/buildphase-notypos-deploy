@@ -13,55 +13,51 @@
 ```mermaid
 graph TB
     subgraph client["Browser"]
-        UI["Ask UI ✅<br/>audience modes · evidence cards · citations"]
-        STACK["My Stack 📋<br/>CRUD · agent scan"]
-        CLAIM["Claim Check 📋"]
+        UI["Ask UI ✅<br/>reading level · EN/ES · evidence cards · citations"]
+        HCTX["About You panel ✅<br/>age · sex · pregnancy — sessionStorage only"]
+        STACK["My Stack ✅<br/>add · remove · deterministic dose check"]
+        CARDS["Decision Cards ✅<br/>create · list · delete · print"]
     end
 
     subgraph vercel["Vercel — Next.js 16 App Router"]
-        MW["middleware 🔨<br/>session refresh · route protection"]
+        MW["middleware ✅<br/>session refresh · route protection"]
         subgraph routes["Route Handlers"]
             ASK["POST /api/ask ✅"]
-            CRUD["/api/stack · /api/meds 📋"]
-            SCAN["POST /api/stack/scan 📋"]
-            CHK["POST /api/claim-check 📋"]
+            CRD["/api/cards, /api/cards/[id] ✅"]
+            HLTH["GET /api/health ✅<br/>verifies every secret live"]
         end
         subgraph lib["Server libraries"]
             RAG["rag/retrieve ✅<br/>rag/answer ✅"]
             LLM["llm/index ✅<br/>dispatch · retry · zod validation"]
             EMB["embeddings ✅<br/>normalize · pace"]
-            AGENT["agent/stack-scan 📋"]
+            NIH["lib/nih ✅<br/>life-stage · units · stack-check<br/>deterministic, no model call"]
         end
     end
 
     subgraph supabase["Supabase"]
-        AUTH["Auth — JWT 🔨"]
-        PG[("Postgres + pgvector ✅<br/>chunks · fact_sheets · nutrient_limits<br/>profiles · stack_items · messages")]
+        AUTH["Auth — JWT ✅"]
+        PG[("Postgres + pgvector ✅<br/>chunks · fact_sheets · nutrient_limits<br/>stack_items · decision_cards")]
     end
 
     subgraph external["External services"]
         GEM["Google Gemini ✅<br/>gemini-embedding-001"]
         TRU["FAU Trussed ✅<br/>gpt-5.4"]
-        DSLD["NIH DSLD API 📋"]
-        REDIS["Upstash Redis 📋<br/>answer cache · rate limit"]
+        DSLD["NIH DSLD API 📋<br/>not built — label scanner"]
     end
 
     subgraph offline["Offline — run manually"]
-        ING["scripts/ingest.ts ✅"]
+        ING["scripts/ingest.ts ✅ (en) · 📋 (es not yet run)"]
         ODS["ods.od.nih.gov ✅"]
     end
 
     UI --> MW --> ASK --> RAG
-    STACK --> CRUD --> PG
-    STACK --> SCAN --> AGENT
-    CLAIM --> CHK --> RAG
+    HCTX -.session only, never persisted.-> ASK
+    STACK --> PG
+    STACK --> NIH
+    CARDS --> CRD --> PG
     RAG --> EMB --> GEM
     RAG --> PG
     RAG --> LLM --> TRU
-    AGENT --> PG
-    AGENT --> LLM
-    AGENT --> DSLD
-    ASK -.cache.-> REDIS
     MW --> AUTH --> PG
     ODS --> ING --> GEM
     ING --> PG
@@ -73,12 +69,18 @@ graph TB
 ```
 
 **Why this shape.** One deployable serves UI and API, so provider keys never reach
-the browser. Retrieval is a shared library, not a per-feature implementation — Ask,
-Claim Check, and the agent scan all call `retrieve()` and render the same citation
-component. Ingestion is deliberately offline: the corpus changes on NIH's schedule,
-not per request, so scraping is never on a user's critical path.
+the browser. Retrieval is a shared library, not a per-feature implementation — Ask
+and the My Stack dose check both resolve through the same NIH fact sheets and
+citation format. Ingestion is deliberately offline: the corpus changes on NIH's
+schedule, not per request, so scraping is never on a user's critical path.
 
----
+**What this diagram no longer shows, on purpose.** An earlier version of this
+design routed My Stack through an LLM agent with tool-calling
+(`lookupNutrientLimits`, `retrieveSection`, `searchDSLD`) and a Claim Check feature
+sharing the retrieval layer. Neither was built — see `plan.md` §2.2.2 for why the
+agent was deliberately dropped in favor of deterministic code, and §2.2 for why
+Claim Check was cut for time. Removing them from this diagram rather than marking
+them 📋 forever is intentional: they are not on the roadmap.
 
 ## 2. Data Flow
 
@@ -114,7 +116,7 @@ sequenceDiagram
     participant D as Postgres pgvector
     participant M as Trussed gpt-5.4
 
-    U->>R: question + audience + language
+    U->>R: question + audience + language + healthContext (session-only)
     R->>R: zod validate · rate limit
     R->>E: embed RETRIEVAL_QUERY
     E-->>R: 768-dim normalized vector
@@ -136,56 +138,69 @@ sequenceDiagram
 invoked. There is no code path where an unanswerable question reaches a model that
 could answer it from its own knowledge.
 
-### 2.3 Agent scan 📋
+### 2.3 My Stack safety check — deterministic, not an agent
 
 ```mermaid
 flowchart TD
-    A["POST /api/stack/scan"] --> B["Load stack · medications · life stage"]
-    B --> C{"for each item"}
-    C --> D["resolveSupplementName()"]
-    D --> E["lookupNutrientLimits(supplement, lifeStage)"]
-    E --> F{"UL row exists?"}
-    F -->|yes| G["Compare dose to UL<br/>in code, not the model"]
-    F -->|no| H["Note: no UL published"]
-    G --> I["retrieveSection('interactions')"]
-    H --> I
-    I --> J["Model explains findings<br/>with citations"]
-    J --> K["Rank by severity → stack_scans"]
+    A["User's saved stack_items"] --> B{"for each nutrient"}
+    B --> C["Sum dose across every product<br/>that contributes it"]
+    C --> D["Look up nutrient_limits for<br/>that nutrient + NIH life-stage row"]
+    D --> E{"UL row exists?"}
+    E -->|no| F["no_limit_published finding<br/>— stated explicitly, never silent"]
+    E -->|yes| G{"summed dose vs. UL"}
+    G -->|over, multiple sources| H["cumulative_upper_limit finding"]
+    G -->|over, one source| I["upper_limit finding"]
+    G -->|near| J["approaching_limit finding"]
+    G -->|fine| K["no finding"]
+    F --> L["Return findings — nothing here calls the model"]
+    H --> L
+    I --> L
+    J --> L
 ```
 
-**Division of labor.** The model decides *which* limits to fetch and how to phrase a
-finding. The numeric comparison of a dose against a `nutrient_limits` row happens in
-TypeScript. A safety check must not depend on a model doing arithmetic correctly.
-
----
+**Why this replaced the originally-planned agent.** An earlier version of this
+design routed the safety check through an LLM agent with typed tools
+(`lookupNutrientLimits`, `retrieveSection`, `resolveSupplementName`, `searchDSLD`)
+deciding which checks to run. It was never built, on purpose: **for a safety
+feature, an agent that can decide to skip the upper-limit check is a liability.**
+`src/lib/nih/stack-check.ts` is a pure function — same input, same findings, every
+time, independent of any model call. Two real bugs surfaced by
+`scripts/test-life-stage.ts` justify this in retrospect: month ranges padded as
+years (an infant's limit reaching a toddler), and age-less "Pregnant teens" rows
+matching a 30-year-old. Both would have produced a wrong safety answer silently
+if an agent had been making the call instead of a typed comparison with its own
+test suite.
 
 ## 3. User Flow
 
 ```mermaid
 flowchart TD
     L["Landing — Ask ✅"] --> A["Type or click an example"]
-    A --> AUD["Choose audience · EN/ES ✅"]
-    AUD --> Q["Submit"]
+    A --> LVL["Choose reading level (Simple/Standard) ✅"]
+    LVL --> ABOUT["Optionally fill About You —<br/>age · sex · pregnancy, session-only ✅"]
+    ABOUT --> Q["Submit"]
     Q --> LOAD["Skeleton loading ✅"]
     LOAD --> RES{"grounded?"}
     RES -->|no| REF["Outside the NIH fact sheets ✅"]
     RES -->|yes| CARDS["Evidence · Uncertainty · Marketing<br/>+ inline [n] markers ✅"]
     CARDS --> SRC["Sources → ods.od.nih.gov ✅"]
-    CARDS --> SWITCH["Switch audience → re-answer ✅"]
+    CARDS --> SWITCH["Switch reading level → re-answer ✅"]
     REF --> A
     SRC --> A
 
-    L -.-> AUTH["Sign in 🔨"]
-    AUTH --> MS["My Stack 📋"]
-    MS --> ADD["Add supplements · meds · life stage"]
-    ADD --> SCAN["Run safety scan"]
-    SCAN --> FIND["Flagged findings + citations"]
-    FIND --> CARD["Decision Card 📋"]
+    L -.-> AUTH["Sign in ✅"]
+    AUTH --> MS["My Stack ✅ add/remove/view"]
+    MS --> CHECK["Deterministic dose check ✅"]
+    CHECK --> FIND["Findings + citations ✅"]
+    FIND --> CARD["Save as Decision Card ✅"]
+    CARD --> PRINT["Print ✅"]
 ```
 
 **Anonymous first.** Ask requires no account — a sign-up wall in front of public
 health information would defeat the point. Authentication gates only what is
-personal: your stack, your medications, your history.
+personal: your stack and your saved Decision Cards. Nothing about health
+conditions or medications is ever collected, signed in or not — see "Privacy
+design" below.
 
 ### Wireframe — the Ask surface ✅
 
@@ -195,7 +210,7 @@ personal: your stack, your medications, your history.
 │  Plain-language answers about dietary supplements,       │
 │  grounded in NIH fact sheets.                            │
 │                                                          │
-│  (Teen) (•Adult•) (Senior 65+) (Caregiver) │ (English)  │
+│  (•Simple•) (Standard)                                   │
 │                                                          │
 │  ┌────────────────────────────────────┐  ┌───────────┐   │
 │  │ Ask about a supplement…            │  │    Ask    │   │
@@ -225,7 +240,9 @@ personal: your stack, your medications, your history.
 
 Three cards rather than a paragraph is a deliberate choice: the evidence /
 uncertainty / marketing split is the sponsor's stated requirement, and rendering it
-as structure rather than prose makes the distinction impossible to skim past.
+as structure rather than prose makes the distinction impossible to skim past. The
+original wireframe showed Teen/Adult/Senior/Caregiver pills where reading level is
+now — see "Explicitly cut" in `plan.md`.
 
 ---
 
@@ -233,16 +250,12 @@ as structure rather than prose makes the distinction impossible to skim past.
 
 ```mermaid
 erDiagram
-    auth_users ||--|| profiles : "trigger creates"
+    auth_users ||--|| profiles : "trigger creates, unused otherwise"
     auth_users ||--o{ stack_items : owns
-    auth_users ||--o{ medications : owns
-    auth_users ||--o{ conversations : owns
-    auth_users ||--o{ claim_checks : owns
-    auth_users ||--o{ stack_scans : owns
+    auth_users ||--o{ decision_cards : owns
     fact_sheets ||--o{ chunks : "cascade"
     fact_sheets ||--o{ nutrient_limits : "cascade"
     fact_sheets ||--o{ stack_items : "set null"
-    conversations ||--o{ messages : "cascade"
 
     fact_sheets {
         uuid id PK
@@ -271,12 +284,6 @@ erDiagram
         numeric ul_amount
         text ul_unit
     }
-    profiles {
-        uuid user_id PK
-        text audience_mode
-        text language
-        text life_stage "none|pregnant|postpartum"
-    }
     stack_items {
         uuid id PK
         uuid user_id FK
@@ -285,17 +292,29 @@ erDiagram
         numeric dose_amount
         text dose_unit
         text dsld_id
+        jsonb ingredients "added 0002 — multi-ingredient products, cumulative check"
     }
-    messages {
+    decision_cards {
         uuid id PK
-        uuid conversation_id FK
-        text role
-        jsonb cards
+        uuid user_id FK
+        text title
+        text question
+        jsonb guidance "evidence, uncertainty, marketing"
         jsonb citations
-        uuid_array retrieved_chunk_ids "audit trail"
-        boolean refused
+        text_array questions_for_clinician
+        boolean includes_medications "false by default; redacted unless opted in"
     }
 ```
+
+**Live but unused.** `0001_init.sql` also created `profiles` (columns
+`audience_mode`, `age_band`, `life_stage`), `conversations`, `messages`, and
+`claim_checks`, built for the original audience-mode/chat-history/Claim Check
+design. None of them are queried or written by any current route — `grep -rn
+"\.from('conversations')\|\.from('messages')\|\.from('claim_checks')" src` returns
+nothing. `0002_privacy.sql` dropped `life_stage` from `profiles` and dropped
+`medications` and `stack_scans` outright (see "Privacy design" below) — the rest
+were simply never wired up. They're harmless (RLS-protected, empty) but are a real
+cleanup candidate for a future migration rather than something actively used today.
 
 ### Indexes
 
@@ -304,10 +323,9 @@ erDiagram
 | `hnsw (embedding vector_cosine_ops)` | `chunks` | Approximate nearest neighbour — the core retrieval index |
 | `btree (fact_sheet_id)` | `chunks` | Cascade deletes and per-sheet re-ingest |
 | `btree (supplement, audience, language)` | `fact_sheets` | Corpus filtering |
-| `btree (supplement)` | `nutrient_limits` | Agent UL lookups |
-| `btree (user_id)` | `stack_items`, `medications` | RLS-filtered reads |
-| `btree (conversation_id, created_at)` | `messages` | Ordered transcript |
-| `btree (user_id, created_at desc)` | `conversations`, `claim_checks`, `stack_scans` | Recent-first history |
+| `btree (supplement)` | `nutrient_limits` | Stack-check UL lookups |
+| `btree (user_id)` | `stack_items` | RLS-filtered reads |
+| `btree (user_id, created_at desc)` | `decision_cards` | Recent-first history |
 
 ### Row-level security
 
@@ -319,48 +337,30 @@ create policy "own stack" on public.stack_items
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 ```
 
-`messages` has no `user_id` of its own and inherits ownership through its
-conversation:
-
-```sql
-create policy "own messages" on public.messages
-  for all using (
-    exists (select 1 from public.conversations c
-            where c.id = messages.conversation_id and c.user_id = auth.uid())
-  );
-```
-
-A `handle_new_user` trigger creates a `profiles` row on signup, so no code path can
-produce an authenticated user without a profile.
+`decision_cards` carries the same pattern. A `handle_new_user` trigger creates a
+`profiles` row on signup, so no code path can produce an authenticated user
+without a profile — even though nothing currently reads that profile's fields.
 
 ### Design notes
 
 **`nutrient_limits` is a separate typed table, not prose.** The RDA and Upper Limit
-values are parsed out of the fact-sheet tables into numeric columns. The agent
-compares a user's dose to a database row rather than asking a model to recall a
-threshold. Dosage limits are exactly the kind of fact where a plausible-but-wrong
-number is dangerous.
-
-**`messages.retrieved_chunk_ids` exists for auditability.** It records what
-retrieval actually returned for a turn, independent of what the model chose to cite —
-so a past answer can be re-checked against its real evidence.
+values are parsed out of the fact-sheet tables into numeric columns.
+`stack-check.ts` compares a user's summed dose to a database row rather than
+asking a model to recall a threshold. Dosage limits are exactly the kind of fact
+where a plausible-but-wrong number is dangerous.
 
 **`content_hash` is nullable by design.** Null means "chunks not yet confirmed."
-
----
 
 ## 5. API Architecture
 
 | Method | Endpoint | Auth | Purpose | Status |
 |---|---|---|---|---|
 | POST | `/api/ask` | none | Grounded Q&A | ✅ |
-| POST | `/api/claim-check` | none | Evidence-strength verdict on a claim | 📋 |
-| GET/POST | `/api/stack` | required | List / add stack items | 📋 |
-| PATCH/DELETE | `/api/stack/[id]` | required | Update / remove | 📋 |
-| GET/POST | `/api/meds` | required | List / add medications | 📋 |
-| POST | `/api/stack/scan` | required | Agentic safety scan | 📋 |
-| GET | `/api/conversations` | required | History | 📋 |
-| POST | `/api/label/scan` | required | DSLD lookup / OCR | 📋 |
+| GET/POST | `/api/cards` | required | List / save Decision Cards | ✅ |
+| DELETE | `/api/cards/[id]` | required | Remove a Decision Card | ✅ |
+| GET | `/api/health` | none | Verify every configured secret against its real dependency; `?deep=1` adds a live embedding + generation call | ✅ |
+| — | `/api/stack` | — | **Does not exist.** Stack CRUD goes directly from the browser to Supabase (`stack_items`) via the anon key, authorized by RLS — no custom route layer. | n/a by design |
+| — | `/api/claim-check`, `/api/label/scan` | — | Never built — features cut, see `plan.md` "Explicitly cut" | 📋 |
 
 ### `POST /api/ask` ✅
 
@@ -369,13 +369,22 @@ so a past answer can be re-checked against its real evidence.
 ```json
 {
   "question": "Does zinc help with colds?",
-  "audience": "teen",
-  "language": "en"
+  "audience": "standard",
+  "language": "en",
+  "healthContext": {
+    "ageYears": 34,
+    "sex": "female",
+    "pregnant": false,
+    "breastfeeding": false
+  }
 }
 ```
 
-`question` 3–500 chars · `audience` ∈ `teen|adult|senior|caregiver` ·
-`language` ∈ `en|es`. Validated by zod; unknown fields rejected.
+`question` 3–500 chars · `audience` ∈ `simple|standard` (default `standard`) ·
+`language` ∈ `en|es` (default `en`; `es` currently refuses everything — corpus not
+ingested, see §1) · `healthContext` optional, re-normalized server-side regardless
+of what the client sent (`normalizeContext()` — see "Privacy design" below).
+Validated by zod; unknown fields rejected.
 
 **Response 200 — grounded**
 
@@ -385,6 +394,9 @@ so a past answer can be re-checked against its real evidence.
     "evidence": "Zinc may help a cold end sooner if started early.[1][2]",
     "uncertainty": "Best dose, form, and timing are still unclear.[1]",
     "marketing": "Sold as lozenges and syrup; being sold for colds does not mean symptoms are milder.[1][8]",
+    "forYou": "",
+    "healthConsiderations": "",
+    "medicationInteractions": "",
     "citationsUsed": [1, 2, 8]
   },
   "citations": [
@@ -404,6 +416,11 @@ so a past answer can be re-checked against its real evidence.
   "chunkIds": ["...", "..."]
 }
 ```
+
+`forYou`, `healthConsiderations`, and `medicationInteractions` are the three
+conditional sections — populated only when `healthContext` was provided and the
+retrieved fact sheet actually has relevant content; empty string otherwise, never
+omitted, so the client doesn't have to guess which fields might exist.
 
 **Response 200 — refused**
 
@@ -430,33 +447,33 @@ A refusal is **200, not an error**. It is a correct, expected outcome.
 | 500 | Unexpected | `{"error": "Something went wrong on our side. Try again."}` |
 
 Error bodies carry `LlmError.userMessage`, never provider text or stack traces;
-internal detail goes to server logs.
+internal detail goes to server logs. Deliberately does not log the request body —
+it may carry health context, and "we don't store health data" has to include the
+logs.
 
-### `POST /api/stack/scan` — planned shape 📋
+### My Stack safety check — not an API route
 
-```json
-{
-  "findings": [
-    {
-      "kind": "upper_limit",
-      "severity": "high",
-      "supplement": "Vitamin D",
-      "detail": "Your 250 mcg daily dose exceeds the NIH upper limit of 100 mcg for adults.",
-      "userDose": { "amount": 250, "unit": "mcg" },
-      "limit": { "amount": 100, "unit": "mcg", "lifeStage": "Adults 19+" },
-      "citations": [{ "supplement": "Vitamin D", "section": "Can vitamin D be harmful?", "url": "..." }]
-    },
-    {
-      "kind": "not_checked",
-      "supplement": "Ashwagandha",
-      "detail": "NIH publishes no upper limit for this supplement, so no dose check was possible."
-    }
-  ]
+There's no `POST /api/stack/scan`. `computeStackFindings()` in
+`src/lib/nih/stack-check.ts` is a plain function, called wherever the My Stack page
+needs it, over data already fetched client-side under RLS. Its actual return shape:
+
+```typescript
+interface Finding {
+  kind: 'upper_limit' | 'cumulative_upper_limit' | 'approaching_limit'
+      | 'no_limit_published' | 'not_comparable';
+  severity: 'high' | 'medium' | 'info';
+  nutrient: string;
+  sources: string[];       // which saved products contribute to this finding
+  totalMcg?: number;
+  limitMcg?: number;
+  limitLabel?: string;
+  lifeStageRow?: string;
+  detail: string;
 }
 ```
 
-`not_checked` is deliberate. A safety tool that silently omits what it could not
-verify reads as "all clear" when it isn't.
+`no_limit_published` is deliberate. A safety tool that silently omits what it
+could not verify reads as "all clear" when it isn't.
 
 ---
 
@@ -466,8 +483,7 @@ verify reads as "all clear" when it isn't.
 graph LR
     subgraph app["Application"]
         ASK["rag/answer.ts ✅"]
-        AGENT["agent/stack-scan 📋"]
-        CHK["claim-check 📋"]
+        NIH["nih/stack-check.ts ✅<br/>deterministic, no model call"]
     end
 
     subgraph shared["Shared AI layer"]
@@ -477,13 +493,11 @@ graph LR
     end
 
     subgraph schemas["zod schemas"]
-        S1["AnswerSchema ✅<br/>evidence/uncertainty/marketing"]
-        S2["VerdictSchema 📋"]
-        S3["FindingsSchema 📋"]
+        S1["AnswerSchema ✅<br/>evidence/uncertainty/marketing<br/>+ forYou/healthConsiderations/medicationInteractions"]
     end
 
     subgraph providers["Providers"]
-        G["Gemini<br/>gemini-embedding-001 ✅<br/>gemini-2.5-flash vision 📋"]
+        G["Gemini<br/>gemini-embedding-001 ✅<br/>gemini-2.5-flash vision 📋 not built"]
         T["Trussed<br/>gpt-5.4 ✅"]
     end
 
@@ -495,16 +509,16 @@ graph LR
     ASK --> RET --> EMBED --> G
     RET --> V
     ASK --> GEN --> T
-    GEN -.fallback.-> G
-    CHK --> RET
-    CHK --> GEN
-    AGENT --> NL
-    AGENT --> RET
-    AGENT --> GEN
+    NIH --> NL
     S1 --> GEN
-    S2 --> GEN
-    S3 --> GEN
 ```
+
+`google/gemini-2.5-flash` is registered in `src/lib/llm/models.ts` as a callable
+provider option, but nothing in the app automatically falls back to it if Trussed
+fails — the dotted `fallback` edge in an earlier version of this diagram was
+aspirational, not built. `answer.ts` always calls the Trussed option. Worth
+building before the showcase: a single-provider outage currently means every
+question fails.
 
 ### Grounding controls
 
@@ -516,29 +530,33 @@ graph LR
 | Empty is valid | Each card may be `""` — the model can say nothing rather than fill the field |
 | Schema safety | zod validation → one corrective reprompt → typed error; malformed output never reaches the UI |
 | No medical advice | System prompt forbids diagnosis, personal dosing, and start/stop instructions |
-| Audit trail | `retrieved_chunk_ids` persisted per message |
+| Audit trail | `chunkIds` returned per response — not persisted server-side, since no conversation history table is actually wired up (see §4) |
 
-### Audience modes
+### Reading level
 
-One retrieval, four generation styles. The evidence is identical; only the framing
-prompt changes:
+One retrieval, two generation styles (`src/lib/rag/answer.ts` `AUDIENCE_STYLE`).
+The evidence is identical; only the framing prompt changes:
 
-| Mode | Reading level | Emphasis |
+| Level | Reading level | Prompt instruction |
 |---|---|---|
-| Teen | Grade 6–8 | Short sentences, concrete, no jargon, no condescension |
-| Adult | Grade 8–10 | Plain language, jargon glossed |
-| Senior (65+) | Grade 6–8 | One idea per sentence; foregrounds interactions and kidney/liver notes |
-| Caregiver | Grade 8–10 | Framed around deciding for someone else and what to raise with a clinician |
+| Simple | Grade 6–8 | Short sentences, one idea each, everyday words, gloss unfamiliar terms, never condescending |
+| Standard | Grade 8–10 | Plain language; explain jargon the first time it appears |
 
-Verified in practice: for "is zinc good for colds?" teen mode opens *"Maybe a
-little."*; senior mode surfaces the 40 mg upper limit, copper depletion, and
-antibiotic/diuretic interactions. Same retrieved chunks.
+Defaults from age when the user has entered one (`defaultReadingLevel()` in
+`health-context.ts`: under 18 or 70+ defaults to Simple), overridable by the level
+buttons in the UI. This replaced an earlier four-mode design
+(Teen/Adult/Senior/Caregiver) — see `plan.md` "Explicitly cut".
 
 ### Spanish
 
-`language: "es"` retrieves from NIH's own `-DatosEnEspanol` fact sheets rather than
-translating English answers. Avoids compounding translation error onto generation
-error, and keeps Spanish answers as authoritative as English ones.
+`language: "es"` is designed to retrieve from NIH's own `-DatosEnEspanol` fact
+sheets rather than translating English answers, avoiding compounding translation
+error onto generation error. **Not functional yet** — the Spanish corpus was never
+run through `scripts/ingest.ts --lang es`, so every Spanish question searches an
+empty set and refuses. The UI toggle has been hidden (`src/app/page.tsx`) until
+this is fixed, rather than ship a control that silently doesn't work. An ingest
+attempt on Aug 25 hit a hard Cloudflare 403 on every `-DatosEnEspanol` URL from the
+developer's network, unresolved as of this writing — see `plan.md` §3.
 
 ---
 
@@ -546,9 +564,9 @@ error, and keeps Spanish answers as authoritative as English ones.
 
 ```mermaid
 graph TB
-    DEV["Local dev<br/>npm run dev"] -->|git push| GH["GitHub<br/>buildphase-notypos"]
-    GH -->|automatic| PRE["Vercel preview<br/>per branch 📋"]
-    GH -->|main| PROD["Vercel production 📋"]
+    DEV["Local dev<br/>npm run dev"] -->|git push| GH2["GitHub Classroom repo<br/>graded, no Vercel App access"]
+    DEV -->|git push, separate remote| GHF["GitHub fork<br/>Vercel deploys from here"]
+    GHF -->|main| PROD["Vercel production ✅<br/>buildphase-notypos.vercel.app"]
 
     PROD --> EDGE["Edge network<br/>static assets · HTTPS"]
     PROD --> FN["Serverless functions<br/>nodejs · maxDuration 60s"]
@@ -556,8 +574,6 @@ graph TB
     FN --> SB["Supabase<br/>Postgres + pgvector + Auth"]
     FN --> TRU["FAU Trussed"]
     FN --> GEM["Google Gemini"]
-    FN -.-> RED["Upstash Redis 📋"]
-    FN -.-> SEN["Sentry 📋"]
 
     ING["scripts/ingest.ts<br/>run manually"] --> SB
     ING --> ODS["ods.od.nih.gov"]
@@ -566,13 +582,16 @@ graph TB
     style ING fill:#F7F7F7
 ```
 
-### Environments
-
-| Environment | Trigger | Database |
-|---|---|---|
-| Local | `npm run dev` | Shared Supabase project |
-| Preview | Any non-main branch | Same project 📋 (separate project if data diverges) |
-| Production | Push to `main` | Same project |
+**Two remotes, deliberately.** The Classroom repo
+(`FAU-AI-HootCamp-Summer-2026/buildphase-notypos`) is what gets graded; org admin
+approval for the Vercel GitHub App on that org wasn't available, so Vercel deploys
+instead from a personal fork. Every commit needs `git push origin main` **and**
+`git push fork main` — nothing keeps them in sync automatically, and the fork
+remote has already gone missing from the local clone once. There is no Preview-vs-
+Production branch split in practice; the fork has one branch and Vercel builds it
+on every push. Redis (answer caching, rate limiting) and Sentry (error tracking)
+were planned in earlier drafts of this document and never built — removed here
+rather than left as permanent 📋 items; see `plan.md` §3.
 
 ### Environment variables
 
@@ -581,26 +600,35 @@ graph TB
 | `NEXT_PUBLIC_SUPABASE_URL` | browser | Project endpoint |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | browser | Publishable key; RLS enforces access |
 | `SUPABASE_SERVICE_ROLE_KEY` | **server only** | Corpus writes; bypasses RLS |
-| `GEMINI_API_KEY` | **server only** | Embeddings |
-| `TRUSSED_API_KEY_OPENAI` | **server only** | Generation |
+| `GEMINI_API_KEY` | **server only** | Embeddings, and the Google-direct generation option |
+| `TRUSSED_BASE_URL` | **server only** | FAU Trussed endpoint; has a working default if unset |
+| `TRUSSED_API_KEY_OPENAI` | **server only** | Generation — the only provider actually wired into `/api/ask` |
+| `TRUSSED_API_KEY_GEMINI` | **server only** | Registered for the `trussed-gemini` provider option; not exercised by any current route |
 | `RETRIEVAL_MIN_SIMILARITY` | server | Refusal floor (0.66) |
+| `NEXT_PUBLIC_SITE_URL` | browser | Read only by `/api/health`, which fails the check if this is missing or still says `localhost` |
 | `EMBED_BATCH_SIZE`, `EMBED_INTERVAL_MS` | server | Ingest pacing override |
 
 `.env.local` is gitignored and verified so; `.env.example` is committed as
 documentation (this required an explicit `!.env.example` negation, because the
-default `.env*` pattern hid it too).
+default `.env*` pattern hid it too). `NEXT_PUBLIC_SITE_URL` and
+`NEXT_PUBLIC_SUPABASE_URL` both trip a Vercel warning suggesting they be marked
+"Sensitive" because of the `URL`/`KEY` substring in the name — they should stay
+marked **Config**, not Sensitive: Sensitive values aren't readable at build time,
+and `NEXT_PUBLIC_` values must be, to get inlined into the client bundle.
 
 ### Ingestion is not part of deployment
 
-`scripts/ingest.ts` runs manually against Supabase. It is not triggered by deploys
-and Vercel never contacts `ods.od.nih.gov`. The corpus changes on NIH's schedule.
-📋 A monthly GitHub Action can automate re-ingest; the content-hash check makes
-re-runs nearly free.
+`scripts/ingest.ts` runs manually against Supabase, from a developer machine — the
+Claude cloud/device-bridge tooling used to build this project cannot reach
+`ods.od.nih.gov`, `*.supabase.co`, or Google's APIs; egress is allowlisted. Vercel
+never contacts `ods.od.nih.gov` either. The corpus changes on NIH's schedule, not
+per deploy.
 
 ### CI/CD 📋
 
-`npm run typecheck` · `npm run lint` · `next build` · `gitleaks` on every push;
-Vercel deploys `main` on green.
+`npm run typecheck` · `npm run lint` · `next build` on every push — none of this is
+currently automated; each has only been run manually. Not built: `gitleaks`,
+branch protection, automatic deploy gating on green.
 
 ---
 
@@ -660,8 +688,10 @@ Two implementation details that matter more than the model choice:
 ### Trussed `gpt-5.4` for generation
 
 Provided by FAU at no cost, verified working from Vercel (not campus-only), and strong
-at instruction-following for JSON-schema output. Gemini remains the configured fallback
-through the same provider abstraction.
+at instruction-following for JSON-schema output. `google/gemini-2.5-flash` is
+registered in the same provider abstraction and could serve as a fallback, but
+nothing currently switches to it automatically — see §6. That's worth building
+before the showcase: right now a single Trussed outage fails every question.
 
 ### Section-bounded chunking with heading prefixes
 
@@ -695,14 +725,19 @@ evidence from uncertainty from marketing — is enforced by the schema rather th
 requested in a prompt and hoped for. Each field may be empty, so the model can decline
 to say anything about marketing rather than inventing a claim to fill the space.
 
-### Deterministic orchestration for the agent
+### Deterministic orchestration over an agent, for the stack-safety check
 
-Control flow lives in TypeScript; the model is called at specific decision points.
-Numeric dose-vs-limit comparison happens in code. An autonomous loop that could decide
-to skip the upper-limit check is unacceptable in a safety feature.
+An earlier draft of this design routed the My Stack dose check through an LLM
+agent with tool-calling. It was never built, deliberately: control flow instead
+lives in plain TypeScript (`src/lib/nih/stack-check.ts`), the model is never
+called for it, and numeric dose-vs-limit comparison happens in code. An
+autonomous loop that could decide to skip the upper-limit check is unacceptable
+in a safety feature — see §2.3 for the full reasoning and what shipped instead.
 
 ### Anonymous-first authentication
 
 Ask requires no account. Public health information behind a sign-up wall defeats the
-purpose. Authentication gates only personal data — stack, medications, history — and
-RLS enforces ownership at the database layer.
+purpose. Authentication gates only personal data — the supplements you've saved
+and your Decision Cards — and RLS enforces ownership at the database layer.
+Conditions and medications were never part of that gate: they're not collected
+signed in or signed out.

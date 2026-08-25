@@ -1,5 +1,7 @@
 import { getUser } from '@/lib/supabase/server';
 import { createClient } from '@/lib/supabase/server';
+import AddStackItemForm from '@/components/AddStackItemForm';
+import DeleteStackItemButton from '@/components/DeleteStackItemButton';
 
 export default async function StackPage() {
   // Middleware already redirects anonymous users, but a page that reads user
@@ -26,17 +28,21 @@ export default async function StackPage() {
           Supplements ({items?.length ?? 0})
         </h2>
         {items?.length ? (
-          <ul className="space-y-1 text-sm text-slate-700">
+          <ul className="mb-4 space-y-1.5 text-sm text-slate-700">
             {items.map((i) => (
-              <li key={i.id}>
-                {i.label_name}
-                {i.dose_amount && ` — ${i.dose_amount} ${i.dose_unit ?? ''}`}
+              <li key={i.id} className="flex items-center justify-between gap-2">
+                <span>
+                  {i.label_name}
+                  {i.dose_amount && ` — ${i.dose_amount} ${i.dose_unit ?? ''}`}
+                </span>
+                <DeleteStackItemButton id={i.id} />
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-slate-500">Nothing saved yet.</p>
+          <p className="mb-4 text-sm text-slate-500">Nothing saved yet.</p>
         )}
+        <AddStackItemForm />
       </section>
 
       <section className="mb-6 rounded-xl border border-slate-200 p-5">

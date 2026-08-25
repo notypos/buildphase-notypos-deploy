@@ -42,23 +42,39 @@ export const EMPTY_CONTEXT: HealthContext = {
 
 
 /**
+ * Whether pregnancy/breastfeeding could plausibly apply right now: sex is
+ * female, and age is either not entered yet or falls in NIH's childbearing
+ * range. An age that hasn't been typed in yet is treated as "could still
+ * apply" — not as "doesn't apply" — so selecting Female shows the checkboxes
+ * immediately, and checking one doesn't get silently wiped out on the very
+ * same keystroke just because age is still blank. Once a real age is entered
+ * outside the range, or sex is no longer female, eligibility is lost.
+ */
+function pregnancyEligible(ctx: HealthContext): boolean {
+  if (ctx.sex !== 'female') return false;
+  if (ctx.ageYears === null) return true;
+  return ctx.ageYears >= 10 && ctx.ageYears <= 60;
+}
+
+/**
  * Force the context into a self-consistent state.
  *
- * Pregnancy and breastfeeding cannot be true once sex is no longer female or the
- * age is outside the childbearing range. Hiding the checkboxes in the UI is not
- * enough: the values stay in state and get sent to the server, where they would
- * steer life-stage matching. Applied on every change AND again server-side, so
- * an inconsistent combination cannot exist regardless of which UI wrote it.
+ * Pregnancy and breastfeeding cannot be true once sex is no longer female, or
+ * once a real age is entered that's outside the childbearing range (an age
+ * that simply hasn't been entered yet does not clear them — see
+ * pregnancyEligible). Hiding the checkboxes in the UI is not enough: the
+ * values stay in state and get sent to the server, where they would steer
+ * life-stage matching. Applied on every change AND again server-side, so an
+ * inconsistent combination cannot exist regardless of which UI wrote it.
  */
 export function normalizeContext(ctx: HealthContext): HealthContext {
-  const eligible = ctx.sex === 'female' && ctx.ageYears !== null && ctx.ageYears >= 10 && ctx.ageYears <= 60;
-  if (eligible) return ctx;
+  if (pregnancyEligible(ctx)) return ctx;
   return { ...ctx, pregnant: false, breastfeeding: false };
 }
 
 /** Pregnancy/lactation only apply to some people; don't ask everyone. */
 export function showsPregnancyOptions(ctx: HealthContext): boolean {
-  return ctx.sex === 'female' && ctx.ageYears !== null && ctx.ageYears >= 10 && ctx.ageYears <= 60;
+  return pregnancyEligible(ctx);
 }
 
 export function hasAnyContext(ctx: HealthContext): boolean {

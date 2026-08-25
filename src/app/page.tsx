@@ -101,7 +101,9 @@ export default function Home() {
   const [question, setQuestion] = useState('');
   const [context, setContext] = useState<HealthContext>(EMPTY_CONTEXT);
   const [levelOverride, setLevelOverride] = useState<string | null>(null);
-  const [language, setLanguage] = useState<'en' | 'es'>('en');
+  // Spanish toggle removed from the UI until scripts/ingest.ts --lang es has
+  // actually landed the Spanish corpus — see design.md. Locked to 'en' for now.
+  const language: 'en' | 'es' = 'en';
   const [result, setResult] = useState<AskResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -254,14 +256,6 @@ export default function Home() {
         {levelOverride === null && context.ageYears !== null && (
           <span className="text-xs text-slate-400">set from your age</span>
         )}
-        <span className="mx-1 h-5 w-px bg-slate-200" />
-        <button
-          onClick={() => setLanguage(language === 'en' ? 'es' : 'en')}
-          className="rounded-full bg-slate-100 px-3.5 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200"
-          title="Spanish answers come from NIH's own Spanish fact sheets"
-        >
-          {language === 'en' ? 'English' : 'Español'}
-        </button>
       </div>
 
       <form

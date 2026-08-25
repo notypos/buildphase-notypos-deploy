@@ -49,12 +49,16 @@ _against_ this problem statement as an academic project, not as a competition en
 
 | Group                                           | Need                                             | How ClearLabel serves it                                                       |
 | ----------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------ |
-| **Adults** making everyday supplement decisions | Is this worth taking? Is this dose safe?         | Cited answers at an 8th–10th grade reading level                               |
-| **Teens / young adults**                        | Encounter supplement claims through social media | Teen reading mode; Claim Check for viral claims                                |
-| **Seniors**                                | Polypharmacy; narrower safety margins            | Senior mode foregrounds interactions and upper limits                     |
-| **Caregivers**                                  | Managing someone else's regimen                  | Caregiver mode; Decision Card to bring to appointments                         |
-| **Spanish-speaking users**                      | Health-equity gap in supplement literacy         | Answers retrieved from NIH's _own_ Spanish fact sheets, not machine-translated |
+| **Adults** making everyday supplement decisions | Is this worth taking? Is this dose safe?         | Cited answers, Simple or Standard reading level                                |
+| **Pregnant / breastfeeding people**             | NIH publishes distinct amounts for this group    | Session-only age/sex/pregnancy context steers which NIH row applies, without storing health data |
+| **People managing a stack of supplements**      | Products fine individually can be unsafe combined | Deterministic per-nutrient cumulative-dose check against NIH upper limits (My Stack) |
+| **Spanish-speaking users**                      | Health-equity gap in supplement literacy         | **Not yet shipped.** Pipeline retrieves NIH's own Spanish fact sheets rather than machine-translating, but that corpus isn't ingested yet — see §2.2.2. |
 | **Clinicians** (indirect)                       | Patients arrive with unsourced beliefs           | Decision Card gives patients sourced questions to ask                          |
+
+*(Original plan additionally scoped Teen/Senior/Caregiver reading modes and a
+Claim Check feature for viral marketing claims. Both were cut during the build —
+see "Explicitly cut" below — in favor of finishing the privacy-preserving
+personalization and deterministic dose-checking that actually shipped.)*
 
 **Non-users, explicitly.** ClearLabel does not serve people seeking a diagnosis,
 a personal dosing prescription, or advice about their own medications. Those
@@ -84,15 +88,15 @@ supplement substitutes for treatment.
 
 | Gate requirement                                                                            | How ClearLabel addresses it                                                                                                                                                                                                                       | Status                 |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| **AI Integration** — meaningful AI feature, not a chatbot wrapper                           | RAG over 579 chunks of NIH content: query embedding → pgvector cosine search → similarity floor → grounded generation with enforced citations and a three-way evidence/uncertainty/marketing split. Plus a planned agentic multi-step stack scan. | ✅ core / 📋 agent     |
+| **AI Integration** — meaningful AI feature, not a chatbot wrapper                           | RAG over 579 chunks of NIH content: query embedding → pgvector cosine search → similarity floor → grounded generation with enforced citations and a three-way evidence/uncertainty/marketing split. The stack-safety check is deterministic TypeScript, not an agent — see §2.2.2 for why that's a deliberate choice. | ✅     |
 | ↳ error handling                                                                            | Typed `LlmError` with a `userMessage` field separating internal detail from what users see. Config errors surface immediately; transient ones retry.                                                                                              | ✅                     |
 | ↳ loading states                                                                            | Skeleton placeholders during retrieval and generation; button disabled and relabeled.                                                                                                                                                             | ✅                     |
 | ↳ rate-limit handling                                                                       | Two backoff ladders: 429 → 1/2/4 s, 5xx → 5/10/20 s. Embedding pacing at 8 chunks / 5 s with 15/45/70/70 s backoff (must exceed the 60 s quota window).                                                                                           | ✅                     |
 | ↳ user-friendly messages                                                                    | "Too many questions in a row. Give it a minute." — never a stack trace or provider error.                                                                                                                                                         | ✅                     |
-| **Backend & Database** — full CRUD, clean schema, persistence                               | Supabase Postgres, 10 tables, foreign keys with cascade deletes, HNSW vector index. Full CRUD on `stack_items`, `medications`, `conversations`.                                                                                                   | ✅ schema / 📋 CRUD UI |
-| **Authentication** — registration, login, protected routes, sessions, env vars              | Supabase Auth (JWT). `profiles` auto-created by an `on_auth_user_created` trigger. Row-level security on every user-owned table. Browser and server clients built; login UI and middleware pending.                                               | 🔨                     |
-| **Documentation** — README with name, Z-number, FAU email, links, setup, stack; design docs | [`README.md`](README.md), [`docs/SETUP.md`](docs/SETUP.md), this file, [`design.md`](design.md).                                                                                                                                                  | ✅ / 🔨 links          |
-| **Deployment** — live, publicly accessible                                                  | Vercel. Production build verified locally (`next build` passes).                                                                                                                                                                                  | 📋                     |
+| **Backend & Database** — full CRUD, clean schema, persistence                               | Supabase Postgres, RLS on every user-owned table, HNSW vector index. Full CRUD on `decision_cards` (create/list/delete). `stack_items`: full create/list/delete. `medications`/`stack_scans` were dropped outright by `0002_privacy.sql` — see privacy design. `conversations`/`messages`/`claim_checks` remain in the schema from the original plan but are unused by any current route; candidates for a future cleanup migration. | ✅               |
+| **Authentication** — registration, login, protected routes, sessions, env vars              | Supabase Auth (JWT). `profiles` auto-created by an `on_auth_user_created` trigger. Row-level security on every user-owned table. `src/middleware.ts` protects `/stack` and `/cards`.                                               | ✅                     |
+| **Documentation** — README with name, Z-number, FAU email, links, setup, stack; design docs | [`README.md`](README.md), [`docs/SETUP.md`](docs/SETUP.md), this file, [`design.md`](design.md).                                                                                                                                                  | ✅                     |
+| **Deployment** — live, publicly accessible                                                  | Vercel, live at <https://buildphase-notypos.vercel.app>. `/api/health` verifies every configured secret against its real dependency in production.                                                                                            | ✅                     |
 | **GitHub repository** — clean code, meaningful commits on main                              | 7 scoped commits; no secrets tracked; `.gitignore` verified against `.env.local`.                                                                                                                                                                 | ✅                     |
 | **Demo Video** — 3–5 min covering all features                                              | Scheduled Aug 25.                                                                                                                                                                                                                                 | 📋                     |
 | **Canvas Submission** — repo URL                                                            | Intent slide submitted Aug 19. Final Aug 26.                                                                                                                                                                                                      | 🔨                     |
@@ -188,7 +192,7 @@ chunking or the embedding model.
 | False refusal rate on in-scope questions                               | 0%                                | ✅ 0/6                                      |
 | Retrieval p95                                                          | < 400 ms                          | 🔨 instrumenting                            |
 | End-to-end answer p95                                                  | < 5 s                             | 🔨                                          |
-| Reading-level separation between audience modes                        | Measurable delta                  | ✅ qualitatively; 📋 Flesch-Kincaid scoring |
+| Reading-level separation (Simple vs. Standard)                          | Measurable delta                  | ✅ qualitatively; 📋 Flesch-Kincaid scoring |
 | Corpus coverage                                                        | 100% of published consumer sheets | ✅ 40/40                                    |
 
 **MVP vs. nice-to-have.**
@@ -197,23 +201,28 @@ _MVP — required for the showcase:_
 
 1. ✅ Cited Q&A over the ODS corpus with enforced grounding
 2. ✅ Evidence / uncertainty / marketing card structure
-3. ✅ Four audience reading modes
+3. ✅ Reading level (Simple/Standard) + EN/ES toggle — English fully functional; Spanish corpus not yet ingested (see §2.2.2)
 4. ✅ Measured refusal threshold
-5. 🔨 Authentication with protected routes
-6. 📋 My Stack CRUD + agentic upper-limit and interaction scan
-7. 📋 Claim Check
-8. 📋 Live deployment
+5. ✅ Authentication with protected routes
+6. ✅ My Stack: view + add + remove + deterministic upper-limit/interaction check
+7. ✅ Live deployment — <https://buildphase-notypos.vercel.app>
 
 _Nice-to-have — cut first under time pressure:_
 
 - Label scan via the NIH DSLD API with vision OCR fallback
-- Decision Card export
+- ✅ Decision Card export — shipped (create/list/delete, clinician questions, print)
 - Voice input (Web Speech API)
-- Spanish corpus ingest (`--lang es`; pipeline supports it, corpus not yet loaded)
+- Spanish corpus ingest (`--lang es`; pipeline supports it, corpus not yet loaded —
+  toggle is visible in the UI and currently returns a refusal for every question)
 - Health-professional corpus variant
 
-_Explicitly cut:_ gamification. High build cost, low payoff in a 10-minute demo,
-and three of the eight Phase 1 concepts already occupy that space.
+_Explicitly cut:_ gamification (high build cost, low payoff in a 10-minute demo,
+and three of the eight Phase 1 concepts already occupy that space); **Claim Check**
+(paste-a-claim verdict feature — dropped in favor of finishing the privacy-preserving
+personalization and dose-checking that shipped instead); **agentic multi-step
+orchestration** for the stack scan (kept deterministic instead — the reasoning in
+§2.2.2 held: an agent that can decide to skip the upper-limit check is a liability
+in a safety feature, so it was never worth building even as a stretch goal).
 
 #### 2.2.2 Agentic AI and RAG
 
@@ -269,42 +278,46 @@ requests unfiltered ranked results and applies the similarity floor in TypeScrip
 deliberately, so near-misses can be logged (`best was 0.412 — VitaminD-Consumer /
 Can vitamin D be harmful?`). That log is how the threshold gets tuned instead of guessed.
 
-**Agentic AI patterns.**
+**Multi-step orchestration — deliberately not agentic.**
 
-_Multi-step task design_ 📋 — the My Stack safety scan:
+The original plan called this section "Agentic AI patterns": an LLM agent with
+typed tools (`lookupNutrientLimits`, `retrieveSection`, `resolveSupplementName`,
+`searchDSLD`) deciding which checks to run and in what order. That was never built
+— not because it ran out of time, but because the reasoning against it held up:
+**for a safety feature, an agent that can decide to skip the upper-limit check is a
+liability.** What shipped instead is fixed, deterministic control flow in
+`src/lib/nih/stack-check.ts`:
 
 ```
-1. Load the user's stack, medications, and life stage
-2. For each item: resolve the label name to a canonical supplement
-3. Query nutrient_limits for that supplement + the user's life stage
-4. Compare the user's dose to the UL           → upper-limit finding
-5. Retrieve each supplement's "interactions" section  → interaction finding
-6. If pregnant/postpartum, retrieve life-stage guidance → life-stage finding
-7. Rank findings by severity, attach citations, persist to stack_scans
+1. Load the user's saved stack items
+2. For each item: look up nutrient_limits for that supplement + the applicable NIH life-stage row
+3. Sum dose per nutrient across every product in the stack
+4. Compare the summed dose to the Tolerable Upper Intake Level  -> cumulative_upper_limit finding
+5. Where NIH publishes no UL for a nutrient, say so explicitly    -> no_limit_published finding
+6. Attach citations; nothing here calls the model
 ```
 
-_Tool/function calling_ 📋 — the agent is given typed tools: `lookupNutrientLimits`,
-`retrieveSection`, `resolveSupplementName`, `searchDSLD`. Numeric threshold
-comparison happens **in application code, not in the model** — the model decides
-_which_ limits to fetch and how to explain a finding; arithmetic against a
-`nutrient_limits` row is deterministic.
+The model's role is narrower than originally scoped, and that's the point: it
+explains a finding in plain language and writes 100% of the user-visible answer
+text elsewhere in the app, but it never decides a dose, never decides which limit
+applies, and never decides whether to run a check. Two real bugs surfaced by
+`scripts/test-life-stage.ts` justify this in retrospect — month ranges padded as
+years (an infant's limit reaching a toddler), and age-less "Pregnant teens" rows
+matching a 30-year-old. Both would have produced a wrong safety answer silently if
+an agent, rather than a typed comparison with its own test suite, had been making
+the call.
 
-_Agent memory and context retention_ 📋 — durable state in Postgres rather than a
-conversation buffer: `stack_items`, `medications`, `profiles.life_stage`, and
-`stack_scans` history so a scan can report what changed since last time.
-`conversations`/`messages` retain chat context, with `messages.retrieved_chunk_ids`
-recording exactly what retrieval returned for each turn — the audit trail that makes
-a past citation verifiable.
+State is durable in Postgres rather than a conversation buffer — `stack_items` and
+saved `decision_cards` persist; the session-only `HealthContext` (age, sex,
+pregnancy/breastfeeding) deliberately does not, per the privacy design in
+`design.md`. Conditions and medications were removed from the schema entirely in
+`0002_privacy.sql` rather than merely left unused — see "Explicitly cut" above.
 
-_Orchestration logic_ 📋 — deterministic control flow in TypeScript with the model
-called at specific decision points, rather than a free-running loop. For a safety
-feature, an agent that can decide to skip the upper-limit check is a liability.
-
-**How advanced AI features integrate, and how users interact with them.** The
-retrieval layer is shared: Ask, Claim Check, and the stack scan all call
-`retrieve()` and all render the same citation component. A user asks a question and
-gets three cards plus sources; saves what they take and gets a flagged scan; pastes
-a marketing claim and gets a verdict. Every surface leads back to the same NIH
+**How the AI features integrate, and how users interact with them.** The
+retrieval layer is shared: Ask and the My Stack safety check both resolve back to
+the same NIH fact sheets and the same citation format. A user asks a question and
+gets three evidence/uncertainty/marketing cards plus sources; saves what they take
+and gets a deterministic dose check. Every surface leads back to the same NIH
 sections.
 
 **Caching and fallback strategies for failed retrievals.**
@@ -420,89 +433,90 @@ optimization scheduled.
 
 ## 3. Timeline and Milestones
 
-**Critical path:** corpus ingest → retrieval → grounded answers → **deployment** →
-demo assets. Everything else can be cut. Deployment is deliberately early: a live
-URL on Aug 21 means deployment surprises surface with five days of buffer instead of
-on the night of the 26th.
+**Critical path:** corpus ingest → retrieval → grounded answers → deployment →
+demo assets. The original plan targeted deployment by Aug 21, five days of buffer
+before the Aug 26 deadline. That buffer did not survive contact with reality —
+deployment slipped and became its own multi-day effort, documented below.
 
 ### Completed — Aug 19 (overnight)
 
 | Deliverable                                  | Status       |
-| -------------------------------------------- | ------------ |
+| --------------------------------------------- | ------------ |
 | Showcase intent one-pager → Canvas           | ✅ submitted |
 | Repo scaffold, schema, RLS                   | ✅           |
 | ODS ingest pipeline (40 sheets, 579 chunks)  | ✅           |
 | Retrieval + grounded generation + `/api/ask` | ✅           |
 | Threshold measured at 0.66                   | ✅           |
-| Ask UI with audience modes and citations     | ✅           |
+| Ask UI with audience modes and citations     | ✅ (later simplified — see §1.3) |
 | 7 commits pushed to `main`                   | ✅           |
 
-### Aug 20 — documentation and auth
+### Aug 20–24 — what actually shipped, against what was planned
 
-- **Deliverables:** `plan.md`, `design.md` (clears the overdue Build Plan assignment);
-  login/register UI; middleware-protected routes; **first Vercel deployment**.
-- **Dependencies:** Vercel needs the Supabase and Gemini environment variables.
-- **Risk:** Supabase Auth email confirmation can block local testing → disable
-  confirmation in dev.
+The original day-by-day plan (documentation and auth on Aug 20, Claim Check and
+Spanish on Aug 21, My Stack and an agentic scan on Aug 22, evaluation and caching
+on Aug 23, hardening and stretch goals on Aug 24) did not survive intact. What
+actually happened across those five days, in summary:
 
-### Aug 21 — Claim Check and Spanish
+| Planned                                    | What shipped instead                                                                   |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Auth + first Vercel deployment (Aug 20)     | Auth shipped. Deployment did not go live until Aug 25 — see "Deployment, honestly" below. |
+| Claim Check + Spanish ingest (Aug 21)       | Claim Check cut entirely (see "Explicitly cut", §2.2). Spanish ingest never run — the toggle exists in the UI but returns a refusal for every question; fixing this is in progress. |
+| My Stack CRUD + agentic scan (Aug 22)       | My Stack view + a **deterministic** cumulative-dose check shipped instead of an agent — see §2.2.2 for why that was a considered decision, not a shortfall. Add-item form still in progress. |
+| Evaluation harness + Redis caching (Aug 23) | Not built. No golden-set scoring harness, no caching layer.                             |
+| Security audit + Sentry + CORS (Aug 24)     | Not built. Rate limiting and RLS shipped (§2.2.4); the rest of the hardening list is unstarted. |
 
-- **Deliverables:** Claim Check with evidence-strength verdicts; Spanish corpus
-  ingest (`--lang es`); Spanish answers verified end to end.
-- **Dependencies:** Claim Check reuses `retrieve()` and `generateStructured()`.
-- **Risk:** Spanish sheets may have a different HTML structure → dry-run parse first.
+Instead, the week's real engineering effort went into a privacy redesign that
+wasn't in the original plan at all: `0002_privacy.sql` dropped `medications` and
+`stack_scans` outright and removed session health context from persistence
+entirely, after evaluating HIPAA and state health-privacy law applicability (see
+"Privacy design" in [`design.md`](design.md)). That wasn't scoped on Aug 19 — it
+came from thinking harder about the problem mid-build, and it's the project's
+actual differentiator, not the originally-planned Claim Check or agent.
 
-### Aug 22 — My Stack and the agent
+**Deployment, honestly.** Getting a live URL took far longer than the Aug 20–21
+target. In rough order: environment variables set with the wrong Vercel
+"Sensitive" designation for `NEXT_PUBLIC_` values; a Trussed API key transposed
+between the OpenAI-compatible and Gemini-compatible key slots, producing a 401
+that only reproduced in production, not locally; a Vercel deployment stuck
+building from a stale commit because the `fork` git remote used for deployment
+(separate from the graded Classroom repo, since org admin approval for the
+Vercel GitHub App wasn't available) had silently gone missing from the local
+clone; GitHub's fork-visibility restriction blocking an attempt to make that fork
+public; and finally Vercel's Hobby-plan single-collaborator deployment gate
+blocking builds because the commit author's GitHub identity didn't match the
+account that owns the Vercel project. Live as of Aug 25 at
+<https://buildphase-notypos.vercel.app>, verified end-to-end via `/api/health?deep=1`.
 
-- **Deliverables:** CRUD for stack items and medications; life stage on profile;
-  agentic scan producing upper-limit and interaction findings.
-- **Dependencies:** ⚠️ **`nutrient_limits` coverage is the critical dependency.**
-  Botanicals and overview sheets have no RDA/UL tables, so the scan must degrade
-  gracefully to interaction-only findings.
-- **Risk:** highest-complexity item in the plan. If it slips, ship the CRUD and the
-  interaction scan; defer upper-limit comparison.
+### Aug 25 — today
 
-### Aug 23 — evaluation and caching
+- Deployment finally verified working end to end.
+- Pregnancy/breastfeeding checkbox eligibility bug fixed (was requiring an age
+  before showing, rather than showing as soon as sex=female — see `src/lib/health-context.ts`).
+- `README.md` and this file brought current with what's actually built.
+- `design.md` brought current; My Stack add/remove form shipped.
+- Remaining: demo video and pitch deck.
 
-- **Deliverables:** 40-question golden set with a scoring harness →
-  `docs/evaluation.md`; Redis caching; Redis-backed rate limiting.
-- **Buffer:** first genuine slack in the schedule; absorbs slippage from Aug 22.
-
-### Aug 24 — hardening and stretch
-
-- **Deliverables:** security audit; Sentry; security headers; CORS; `docs/costs.md`.
-  If time allows: label scan (DSLD) and Decision Card.
-- **Decision point:** stretch features are cut here without hesitation if anything
-  earlier slipped.
-
-### Aug 25 — demo assets
-
-- **Deliverables:** 3–5 minute demo video with captions; 10–15 slide pitch deck with
-  speaker notes; README artifact index complete.
-- **Risk:** consistently underestimated. Video editing is allocated a full day.
-
-### Aug 26 — buffer and submission
+### Aug 26 — submission
 
 - **Deliverables:** final polish; all artifacts linked from README; **Canvas
-  submission by 11:59 PM**.
-- Deliberately reserved as buffer. Nothing new is started on this day.
+  submission by 11:59 PM.**
+- No buffer day remains — Aug 26 is deadline day, not a reserve.
 
-### Aug 27 — rehearsal
+### Aug 27
 
-- Full run-through on the backup path (recorded video, pre-seeded account, cached
-  responses); prepared Q&A responses.
+- Rehearsal for the showcase: full run-through, prepared Q&A responses. A
+  pre-seeded demo account and a recorded-video fallback for venue network
+  failure were planned but not built — worth a quick decision on whether they're
+  still worth doing given the compressed remaining time.
 
 ### Aug 28 — showcase
 
 - 10-minute presentation, 5 minutes Q&A, 1:00–3:00 PM.
 
-### Buffer and blocker summary
+### Risks remaining
 
-| Risk                                 | Likelihood | Mitigation                                                |
-| ------------------------------------ | ---------- | --------------------------------------------------------- |
-| Agent scan (Aug 22) overruns         | Medium     | Aug 23 buffer; ship CRUD + interactions only              |
-| `nutrient_limits` coverage gaps      | Medium     | Graceful degradation; scan states what it could not check |
-| Gemini free-tier quota during a demo | Low        | Answer caching; pre-seeded demo account                   |
-| Venue network failure                | Medium     | Recorded video; cached responses; phone hotspot           |
-| Deployment surprises                 | Low        | Deploying Aug 21, five days early                         |
-| Demo assets underestimated           | High       | Full day allocated; Aug 26 held as buffer                 |
+| Risk                                       | Likelihood | Mitigation                                                          |
+| ------------------------------------------- | ---------- | ---------------------------------------------------------------------- |
+| No demo-day network fallback                | Medium     | Not yet built; consider a cached-response or recorded-video backup   |
+| Spanish toggle still broken if not fixed    | Medium     | Documented honestly either way (§1.3, §2.2.2); hide the toggle if the ingest doesn't land in time |
+| Demo video / pitch deck time                | High       | Consistently the most underestimated item across every version of this plan |
