@@ -60,6 +60,11 @@ See [Not yet built](#not-yet-built).
   sign-in required to scan — reading a photo touches no one's data — but saving
   the result requires an account. Tries three model candidates in order and
   falls through if one doesn't support images.
+- **Barcode scanner** — scans live via the camera (`@zxing/browser`, entirely
+  client-side) and resolves the code through a free UPC database to a product
+  name, then looks that name up in NIH's own DSLD database and shows the
+  manufacturer-submitted label as the source of truth — not a re-read of a
+  photo. Falls back to the label scanner above when nothing matches.
 - **Interaction check** — for each saved supplement, retrieves the NIH fact
   sheet and asks the model (constrained to only what's stated in the retrieved
   text) whether it names a saved medication or drug class in a
@@ -77,9 +82,10 @@ See [Not yet built](#not-yet-built).
   (`DatosEnEspanol`) NIH fact sheets were never run through
   `scripts/ingest.ts --lang es`. The language toggle was removed from the UI on
   Aug 25 rather than ship a control that would silently fail.
-- **DSLD barcode lookup** — the label scanner that shipped Aug 26 is vision-OCR
-  only; scanning a barcode against NIH's DSLD database was the original plan
-  for this feature and was not built.
+- **Live verification of the barcode lookup** — the barcode → UPC database →
+  DSLD chain (below) is typechecked and lint-clean but hasn't been exercised
+  against real network calls yet; the dev sandbox used to build it can't
+  reach either external API.
 
 ## AI integration
 

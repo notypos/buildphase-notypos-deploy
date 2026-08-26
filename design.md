@@ -418,7 +418,7 @@ documents…"* — never *"based on your medical history, this is safe for you."
 | GET | `/api/health` | none | Verify every configured secret against its real dependency; `?deep=1` adds a live embedding + generation call | ✅ |
 | — | `/api/stack` | — | **Does not exist.** Stack CRUD goes directly from the browser to Supabase (`stack_items`, `medications`) via the anon key, authorized by RLS — no custom route layer. | n/a by design |
 | — | `/api/claim-check` | — | Never built — feature cut, see `plan.md` "Explicitly cut" | 📋 |
-| — | `/api/label/scan` (DSLD barcode) | — | Never built — the scanner that shipped is vision-OCR only, no barcode lookup | 📋 |
+| POST | `/api/product-lookup` | none | Barcode → UPC database → DSLD source-of-truth lookup (below); no user data touched | ✅ (untested live — see note) |
 
 ### `POST /api/ask` ✅
 
@@ -560,6 +560,38 @@ extraction and discarded.
 vision candidates failed), 500 (unexpected). Same `LlmError.userMessage`
 convention as `/api/ask` — no provider text or stack traces reach the client,
 and image bytes are never logged.
+
+### `POST /api/product-lookup` ✅ (untested against live network calls)
+
+**Request:** `{ "barcode": "0511111519171" }`
+
+**Response 200 — matched**
+
+```json
+{
+  "matched": true,
+  "dsldId": "214893",
+  "productName": "Chia Seeds",
+  "brandName": "BareOrganics",
+  "items": [{ "labelName": "Fiber", "doseAmount": 5, "doseUnit": "g", "nihTracked": false }]
+}
+```
+
+**Response 200 — no match** (either hop failed): `{ "matched": false, "reason":
+"no_upc_match" | "no_dsld_match", "message": "..." }` — the UI reads `reason`
+to decide whether to just retry the scan or switch to the vision-OCR tab.
+
+Two hops, both to external services this app didn't previously call:
+UPCitemdb's free "trial" tier (no key, ~100 lookups/day, resolves
+barcode → product name) and NIH's DSLD API (`api.ods.od.nih.gov/dsld/v9`,
+free, no key — `search-filter` then `label/{id}`, verified live against real
+responses on Aug 26, unlike the barcode-only claim in earlier drafts of this
+doc). DSLD has no barcode endpoint of its own, which is why the UPC hop
+exists at all. **Caveat:** the running server has never actually made these
+two calls — this project's dev sandbox blocks egress to both hosts, so the
+integration is typechecked and lint-clean against real, verified response
+shapes, but not yet exercised end to end. First real test happens wherever
+this runs with normal internet access.
 
 ### `POST /api/interactions` ✅
 

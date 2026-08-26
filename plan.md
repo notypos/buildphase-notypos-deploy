@@ -219,10 +219,21 @@ _MVP — required for the showcase:_
 
 _Nice-to-have — cut first under time pressure:_
 
-- ✅ Label scan — shipped Aug 26 as vision-model OCR only (`src/app/scan`,
+- ✅ Label scan — shipped Aug 26 as vision-model OCR (`src/app/scan`,
   `src/lib/vision/scan-label.ts`): a photo is transcribed directly into structured
-  doses. The DSLD barcode-lookup half originally scoped here was **not** built —
-  every scan goes through the vision model, no barcode path exists.
+  doses.
+- ✅ Barcode → NIH source-of-truth lookup — added Aug 26 (later same day),
+  `src/lib/upc/lookup.ts` + `src/lib/dsld/client.ts` + `/api/product-lookup`.
+  DSLD has no barcode endpoint of its own, so a scanned barcode first resolves
+  to a product name via a free, keyless UPC database (UPCitemdb trial tier,
+  ~100 lookups/day, no new cost), then that name is searched against NIH's
+  DSLD API to pull the manufacturer-submitted label as the source of truth —
+  not a re-read of a photo. Falls back to the vision-OCR scanner above when
+  either step finds no match, so it never dead-ends the way a database-only
+  lookup would. **Not yet live-verified end to end** — this sandbox's network
+  egress blocks both api.upcitemdb.com and api.ods.od.nih.gov, so the chain
+  is typechecked and lint-clean but wants a real test run with normal
+  internet access before the Friday demo.
 - ✅ Supplement × medication interaction check — shipped Aug 26
   (`src/lib/rag/interactions.ts`, `/api/interactions`). Required reintroducing a
   `medications` table (migration `0003`, reversing part of the Aug privacy
