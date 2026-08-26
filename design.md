@@ -13,22 +13,28 @@
 ```mermaid
 graph TB
     subgraph client["Browser"]
-        UI["Ask UI ✅<br/>reading level · EN/ES · evidence cards · citations"]
+        UI["Ask UI ✅<br/>reading level · citations · evidence cards"]
         HCTX["About You panel ✅<br/>age · sex · pregnancy — sessionStorage only"]
-        STACK["My Stack ✅<br/>add · remove · deterministic dose check"]
+        STACK["My Stack ✅<br/>supplements + medications tabs<br/>deterministic dose check"]
+        SCAN["Scan a Label ✅<br/>photo → structured doses<br/>no sign-in required to scan"]
+        INTUI["Interaction check ✅<br/>saved meds × saved supplements"]
         CARDS["Decision Cards ✅<br/>create · list · delete · print"]
     end
 
     subgraph vercel["Vercel — Next.js 16 App Router"]
-        MW["middleware ✅<br/>session refresh · route protection"]
+        MW["middleware ✅<br/>session refresh · route protection<br/>(/stack · /cards · /account)"]
         subgraph routes["Route Handlers"]
             ASK["POST /api/ask ✅"]
             CRD["/api/cards, /api/cards/[id] ✅"]
+            SCANRT["POST /api/scan ✅<br/>public — no data persisted"]
+            INTRT["POST /api/interactions ✅<br/>requires sign-in"]
+            STKCHK["POST /api/stack-check ✅<br/>requires sign-in"]
             HLTH["GET /api/health ✅<br/>verifies every secret live"]
         end
         subgraph lib["Server libraries"]
-            RAG["rag/retrieve ✅<br/>rag/answer ✅"]
-            LLM["llm/index ✅<br/>dispatch · retry · zod validation"]
+            RAG["rag/retrieve ✅<br/>rag/answer ✅<br/>rag/interactions ✅"]
+            VISION["lib/vision/scan-label ✅<br/>tries 3 model candidates in order"]
+            LLM["llm/index ✅<br/>dispatch · retry · zod validation<br/>+ image attachments"]
             EMB["embeddings ✅<br/>normalize · pace"]
             NIH["lib/nih ✅<br/>life-stage · units · stack-check<br/>deterministic, no model call"]
         end
@@ -36,13 +42,13 @@ graph TB
 
     subgraph supabase["Supabase"]
         AUTH["Auth — JWT ✅"]
-        PG[("Postgres + pgvector ✅<br/>chunks · fact_sheets · nutrient_limits<br/>stack_items · decision_cards")]
+        PG[("Postgres + pgvector ✅<br/>chunks · fact_sheets · nutrient_limits<br/>stack_items · decision_cards · medications (0003)")]
     end
 
     subgraph external["External services"]
-        GEM["Google Gemini ✅<br/>gemini-embedding-001"]
-        TRU["FAU Trussed ✅<br/>gpt-5.4"]
-        DSLD["NIH DSLD API 📋<br/>not built — label scanner"]
+        GEM["Google Gemini ✅<br/>gemini-embedding-001 (text)<br/>gemini-3.6-flash (vision fallback)"]
+        TRU["FAU Trussed ✅<br/>gpt-5.4 (text)<br/>vision support unverified"]
+        DSLD["NIH DSLD API 📋<br/>barcode lookup — not built<br/>scanner is vision-only"]
     end
 
     subgraph offline["Offline — run manually"]
@@ -54,6 +60,10 @@ graph TB
     HCTX -.session only, never persisted.-> ASK
     STACK --> PG
     STACK --> NIH
+    SCAN --> SCANRT --> VISION --> TRU
+    VISION --> GEM
+    INTUI --> INTRT --> RAG
+    STACK --> STKCHK --> NIH
     CARDS --> CRD --> PG
     RAG --> EMB --> GEM
     RAG --> PG
@@ -197,9 +207,12 @@ flowchart TD
 ```
 
 **Anonymous first.** Ask requires no account — a sign-up wall in front of public
-health information would defeat the point. Authentication gates only what is
-personal: your stack and your saved Decision Cards. Nothing about health
-conditions or medications is ever collected, signed in or not — see "Privacy
+health information would defeat the point. Scanning a label also requires no
+account, for the same reason at a smaller scale: reading a photo touches no
+one's data. Authentication gates only what is personal: your stack, your saved
+medications, your interaction checks, and your saved Decision Cards. Health
+**conditions** are never collected, signed in or not. **Medications** are the
+one exception, added Aug 26 and scoped to the interaction check — see "Privacy
 design" below.
 
 ### Wireframe — the Ask surface ✅
@@ -253,6 +266,7 @@ erDiagram
     auth_users ||--|| profiles : "trigger creates, unused otherwise"
     auth_users ||--o{ stack_items : owns
     auth_users ||--o{ decision_cards : owns
+    auth_users ||--o{ medications : owns
     fact_sheets ||--o{ chunks : "cascade"
     fact_sheets ||--o{ nutrient_limits : "cascade"
     fact_sheets ||--o{ stack_items : "set null"
@@ -304,6 +318,11 @@ erDiagram
         text_array questions_for_clinician
         boolean includes_medications "false by default; redacted unless opted in"
     }
+    medications {
+        uuid id PK
+        uuid user_id FK
+        text name "as entered by user; reintroduced in 0003, scoped to interaction check"
+    }
 ```
 
 **Live but unused.** `0001_init.sql` also created `profiles` (columns
@@ -312,8 +331,10 @@ erDiagram
 design. None of them are queried or written by any current route — `grep -rn
 "\.from('conversations')\|\.from('messages')\|\.from('claim_checks')" src` returns
 nothing. `0002_privacy.sql` dropped `life_stage` from `profiles` and dropped
-`medications` and `stack_scans` outright (see "Privacy design" below) — the rest
-were simply never wired up. They're harmless (RLS-protected, empty) but are a real
+`medications` and `stack_scans` outright (see "Privacy design" below);
+`0003_medications.sql` (Aug 26) reintroduced `medications` alone, scoped
+narrowly to the new interaction-check feature — `stack_scans` and
+`profiles.life_stage` remain dropped. The rest were simply never wired up. They're harmless (RLS-protected, empty) but are a real
 cleanup candidate for a future migration rather than something actively used today.
 
 ### Indexes
@@ -326,6 +347,7 @@ cleanup candidate for a future migration rather than something actively used tod
 | `btree (supplement)` | `nutrient_limits` | Stack-check UL lookups |
 | `btree (user_id)` | `stack_items` | RLS-filtered reads |
 | `btree (user_id, created_at desc)` | `decision_cards` | Recent-first history |
+| `btree (user_id)` | `medications` | RLS-filtered reads |
 
 ### Row-level security
 
@@ -351,6 +373,38 @@ where a plausible-but-wrong number is dangerous.
 
 **`content_hash` is nullable by design.** Null means "chunks not yet confirmed."
 
+### Privacy design
+
+| Data | Where it lives |
+|---|---|
+| Age, sex, pregnancy/breastfeeding | `sessionStorage` only — never written, never logged |
+| Health conditions | **Never collected at all** |
+| Medications | Persisted (`medications`) — reintroduced `0003_medications.sql`, Aug 26, scoped to the interaction check below |
+| Supplements (`stack_items`) | Persisted |
+| Saved Decision Cards | Persisted |
+
+Decided deliberately after evaluating HIPAA applicability: HIPAA does not apply
+(ClearLabel isn't a covered entity, and the sponsor's own guidelines call full
+HIPAA compliance unnecessary here). What does apply — the FTC Health Breach
+Notification Rule, and state laws like Washington's My Health My Data Act —
+cares about retention and disclosure.
+
+Conditions are never collected because ODS discusses a limited set of them —
+most fields would return "no specific guidance," a bad trade for a medical
+history. Condition information instead comes from the retrieved fact sheet
+itself via `retrieveSafetySections()`.
+
+Medications are the one deliberate exception, added Aug 26 for the interaction
+check (§2.2.2 in `plan.md`): `0002_privacy.sql` had dropped this table outright
+so the "never collected" claim was verifiable by reading the schema;
+`0003_medications.sql` reintroduces it narrowly — RLS-scoped, name-only, used
+by nothing except the interaction check. `decision_cards.includes_medications`
+still defaults to `false` and redacts medication names from saved card text
+unless the user opts in at save time.
+
+The system prompt enforces: *"Based on the information you provided, ODS
+documents…"* — never *"based on your medical history, this is safe for you."*
+
 ## 5. API Architecture
 
 | Method | Endpoint | Auth | Purpose | Status |
@@ -358,9 +412,13 @@ where a plausible-but-wrong number is dangerous.
 | POST | `/api/ask` | none | Grounded Q&A | ✅ |
 | GET/POST | `/api/cards` | required | List / save Decision Cards | ✅ |
 | DELETE | `/api/cards/[id]` | required | Remove a Decision Card | ✅ |
+| POST | `/api/scan` | **none, deliberately** | Photo → structured doses via vision model; reading a label touches no user data, so no account is required. Rate-limited (6/min/IP) instead. | ✅ |
+| POST | `/api/interactions` | required | Supplement × medication interaction check; medication ids are looked up server-side scoped by RLS, never trusted from the client | ✅ |
+| POST | `/api/stack-check` | required | Deterministic dose-safety findings over the caller's saved stack | ✅ |
 | GET | `/api/health` | none | Verify every configured secret against its real dependency; `?deep=1` adds a live embedding + generation call | ✅ |
-| — | `/api/stack` | — | **Does not exist.** Stack CRUD goes directly from the browser to Supabase (`stack_items`) via the anon key, authorized by RLS — no custom route layer. | n/a by design |
-| — | `/api/claim-check`, `/api/label/scan` | — | Never built — features cut, see `plan.md` "Explicitly cut" | 📋 |
+| — | `/api/stack` | — | **Does not exist.** Stack CRUD goes directly from the browser to Supabase (`stack_items`, `medications`) via the anon key, authorized by RLS — no custom route layer. | n/a by design |
+| — | `/api/claim-check` | — | Never built — feature cut, see `plan.md` "Explicitly cut" | 📋 |
+| — | `/api/label/scan` (DSLD barcode) | — | Never built — the scanner that shipped is vision-OCR only, no barcode lookup | 📋 |
 
 ### `POST /api/ask` ✅
 
@@ -475,6 +533,62 @@ interface Finding {
 `no_limit_published` is deliberate. A safety tool that silently omits what it
 could not verify reads as "all clear" when it isn't.
 
+### `POST /api/scan` ✅
+
+**Request:** multipart form data, one `image` file (JPEG/PNG/WEBP/HEIC, ≤ 8 MB).
+
+**Response 200**
+
+```json
+{
+  "productName": "Nature Made Vitamin D3",
+  "items": [
+    { "labelName": "Vitamin D3 (Cholecalciferol)", "doseAmount": 2000, "doseUnit": "mcg", "nihTracked": true }
+  ],
+  "readable": true,
+  "note": null
+}
+```
+
+`readable: false` (empty `items`) only when the photo isn't a legible label at
+all. `nihTracked` is computed server-side against `nutrient_limits` so the UI
+can flag, before anything is saved, which rows the upper-limit check will
+actually be able to use. The image itself is never persisted — used once for
+extraction and discarded.
+
+**Errors:** 400 (bad file type/size/form), 429 (> 6/min/IP), 502 (all three
+vision candidates failed), 500 (unexpected). Same `LlmError.userMessage`
+convention as `/api/ask` — no provider text or stack traces reach the client,
+and image bytes are never logged.
+
+### `POST /api/interactions` ✅
+
+**Request**
+
+```json
+{ "supplementNames": ["Vitamin K", "Fish Oil"], "medicationIds": ["<uuid>", "<uuid>"] }
+```
+
+**Response 200**
+
+```json
+{
+  "findings": [
+    { "supplement": "Vitamin K", "medication": "Warfarin", "flagged": true,
+      "detail": "The fact sheet says vitamin K can reduce warfarin's effectiveness." }
+  ],
+  "summary": "Based on the information you provided, ODS documents…",
+  "uncovered": []
+}
+```
+
+`medicationIds` are resolved to names server-side via a query scoped by RLS to
+the caller — the route never trusts a client-supplied medication name for
+what's actually on someone's list. `uncovered` lists any supplement name that
+didn't match an NIH fact sheet closely enough to check at all. Rate-limited
+tighter than `/api/ask` (5/min/IP) since it's one retrieval pass per supplement
+plus a generation call.
+
 ---
 
 ## 6. AI Component Diagram
@@ -497,7 +611,7 @@ graph LR
     end
 
     subgraph providers["Providers"]
-        G["Gemini<br/>gemini-embedding-001 ✅<br/>gemini-2.5-flash vision 📋 not built"]
+        G["Gemini<br/>gemini-embedding-001 ✅<br/>gemini-3.6-flash vision ✅ (fallback candidate)"]
         T["Trussed<br/>gpt-5.4 ✅"]
     end
 
@@ -513,12 +627,17 @@ graph LR
     S1 --> GEN
 ```
 
-`google/gemini-2.5-flash` is registered in `src/lib/llm/models.ts` as a callable
-provider option, but nothing in the app automatically falls back to it if Trussed
-fails — the dotted `fallback` edge in an earlier version of this diagram was
-aspirational, not built. `answer.ts` always calls the Trussed option. Worth
-building before the showcase: a single-provider outage currently means every
-question fails.
+For **text** generation (`answer.ts`, `interactions.ts`), nothing automatically
+falls back if Trussed fails — the dotted `fallback` edge in an earlier version
+of this diagram was aspirational, not built; both always call the Trussed
+option, and `google/gemini-3.6-flash` (Google's replacement for the now-retired
+`gemini-2.5-flash`) sits registered but unused as a text fallback. Worth
+building before the showcase: a single Trussed outage currently fails every
+question and every interaction check. **Vision** generation
+(`scan-label.ts`) is the one place fallback is real: it tries
+`trussed-openai/gpt-5.4` → `trussed-gemini/gemini-2.5-pro` →
+`google/gemini-3.6-flash` in order, because Trussed's image support was
+unverified going in, not primarily for resilience.
 
 ### Grounding controls
 
@@ -531,6 +650,7 @@ question fails.
 | Schema safety | zod validation → one corrective reprompt → typed error; malformed output never reaches the UI |
 | No medical advice | System prompt forbids diagnosis, personal dosing, and start/stop instructions |
 | Audit trail | `chunkIds` returned per response — not persisted server-side, since no conversation history table is actually wired up (see §4) |
+| No false reassurance | The interaction check must report "not mentioned" rather than "safe" when a medication isn't named in the retrieved excerpts |
 
 ### Reading level
 
@@ -582,16 +702,22 @@ graph TB
     style ING fill:#F7F7F7
 ```
 
-**Two remotes, deliberately.** The Classroom repo
-(`FAU-AI-HootCamp-Summer-2026/buildphase-notypos`) is what gets graded; org admin
-approval for the Vercel GitHub App on that org wasn't available, so Vercel deploys
-instead from a personal fork. Every commit needs `git push origin main` **and**
-`git push fork main` — nothing keeps them in sync automatically, and the fork
-remote has already gone missing from the local clone once. There is no Preview-vs-
-Production branch split in practice; the fork has one branch and Vercel builds it
-on every push. Redis (answer caching, rate limiting) and Sentry (error tracking)
-were planned in earlier drafts of this document and never built — removed here
-rather than left as permanent 📋 items; see `plan.md` §3.
+**Two remotes, deliberately — plus a third that isn't yet explained.** The
+Classroom repo (`FAU-AI-HootCamp-Summer-2026/buildphase-notypos`) is what gets
+graded; org admin approval for the Vercel GitHub App on that org wasn't
+available, so Vercel deploys instead from a personal fork. Every commit needs
+`git push origin main` **and** `git push fork main` — nothing keeps them in
+sync automatically, and the fork remote has already gone missing from the local
+clone once. There is no Preview-vs-Production branch split in practice; the
+fork has one branch and Vercel builds it on every push. A third remote,
+`deploy` (`notypos/buildphase-notypos-deploy`), now also exists locally as of
+Aug 26 — this document does not know why, or whether Vercel's git integration
+currently points at `fork` or at `deploy`. **Confirm in the Vercel dashboard
+which repo is actually connected before relying on `git push fork main`
+alone**, and push to whichever remote(s) matter before the 11:59 PM submission.
+Redis (answer caching, rate limiting) and Sentry (error tracking) were planned
+in earlier drafts of this document and never built — removed here rather than
+left as permanent 📋 items; see `plan.md` §3.
 
 ### Environment variables
 
@@ -688,10 +814,11 @@ Two implementation details that matter more than the model choice:
 ### Trussed `gpt-5.4` for generation
 
 Provided by FAU at no cost, verified working from Vercel (not campus-only), and strong
-at instruction-following for JSON-schema output. `google/gemini-2.5-flash` is
-registered in the same provider abstraction and could serve as a fallback, but
-nothing currently switches to it automatically — see §6. That's worth building
-before the showcase: right now a single Trussed outage fails every question.
+at instruction-following for JSON-schema output. `google/gemini-3.6-flash`
+(the replacement for the now-retired `gemini-2.5-flash`) is registered in the
+same provider abstraction and could serve as a text fallback, but nothing
+currently switches to it automatically — see §6. That's worth building before
+the showcase: right now a single Trussed outage fails every question.
 
 ### Section-bounded chunking with heading prefixes
 
@@ -737,7 +864,31 @@ in a safety feature — see §2.3 for the full reasoning and what shipped instea
 ### Anonymous-first authentication
 
 Ask requires no account. Public health information behind a sign-up wall defeats the
-purpose. Authentication gates only personal data — the supplements you've saved
-and your Decision Cards — and RLS enforces ownership at the database layer.
-Conditions and medications were never part of that gate: they're not collected
-signed in or signed out.
+purpose. Scanning a label requires no account either, for the same reason at
+smaller scale. Authentication gates only personal data — the supplements and
+medications you've saved, and your Decision Cards — and RLS enforces ownership
+at the database layer. Conditions are never collected, signed in or signed out;
+medications are the one exception, added Aug 26 and scoped narrowly — see
+"Privacy design" in §4.
+
+### Medications reintroduced for one feature, deliberately narrow (Aug 26)
+
+`0002_privacy.sql` dropped `medications` specifically so "we don't collect
+medications" was verifiable by reading the schema rather than trusting a
+comment. `0003_medications.sql` reverses that, but narrowly: the table holds
+only a user-entered name, RLS-scoped, used only by the interaction check. It is
+not a return to the original conditions-and-medications design — health
+*conditions* are still never collected anywhere in the app, and this reversal
+was made explicitly and documented in the migration itself rather than
+silently. See `plan.md` §1.3 and §2.2.2, and "Privacy design" in §4 of this
+document.
+
+### A fallback chain for vision, not for text generation
+
+The label scanner tries three model candidates in sequence
+(`trussed-openai/gpt-5.4` → `trussed-gemini/gemini-2.5-pro` →
+`google/gemini-3.6-flash`) because whether Trussed's proxy actually forwards
+image content to a vision-capable backend was unverified when this was built —
+the fallback exists to discover that at runtime rather than assume it, not
+primarily for uptime. Text generation (`/api/ask`, `/api/interactions`) still
+has no automatic fallback; see §6.

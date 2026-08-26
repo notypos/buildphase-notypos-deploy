@@ -11,6 +11,9 @@ export default async function Nav() {
           ClearLabel
         </Link>
         <div className="flex items-center gap-4 text-sm">
+          <Link href="/scan" className="text-slate-600 hover:text-teal-700">
+            Scan
+          </Link>
           {user ? (
             <>
               <Link href="/stack" className="text-slate-600 hover:text-teal-700">

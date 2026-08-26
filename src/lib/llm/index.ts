@@ -89,6 +89,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+/** An inline image for a vision-capable request. Base64, no data: prefix. */
+export interface GenerateImage {
+  mimeType: string;
+  dataBase64: string;
+}
+
 interface GenerateArgs {
   apiKey: string;
   baseUrl?: string;
@@ -99,6 +105,7 @@ interface GenerateArgs {
   maxTokens: number;
   json: boolean;
   timeoutMs: number;
+  image?: GenerateImage;
 }
 
 async function googleGenerate(a: GenerateArgs): Promise<string> {
@@ -110,8 +117,20 @@ async function googleGenerate(a: GenerateArgs): Promise<string> {
   };
   if (a.json) config.responseMimeType = 'application/json';
 
+  // Vision requests build a multipart content: the prompt text plus one
+  // inline image. Text-only requests keep passing a plain string, unchanged
+  // from before this was added.
+  const contents = a.image
+    ? [
+        {
+          role: 'user' as const,
+          parts: [{ text: a.prompt }, { inlineData: { mimeType: a.image.mimeType, data: a.image.dataBase64 } }],
+        },
+      ]
+    : a.prompt;
+
   const resp = await withTimeout(
-    ai.models.generateContent({ model: a.model, contents: a.prompt, config }),
+    ai.models.generateContent({ model: a.model, contents, config }),
     a.timeoutMs,
     `Google ${a.model}`,
   );
@@ -124,11 +143,23 @@ async function googleGenerate(a: GenerateArgs): Promise<string> {
 }
 
 async function openaiGenerate(a: GenerateArgs): Promise<string> {
+  // Standard OpenAI vision content-block format: content becomes an array of
+  // {type: 'text'} / {type: 'image_url'} parts instead of a plain string.
+  // Whether Trussed's proxy actually forwards this to a vision-capable
+  // backend is unverified until tested — a failure here should surface
+  // clearly so the caller can fall back to another model, not be swallowed.
+  const userContent = a.image
+    ? [
+        { type: 'text', text: a.prompt },
+        { type: 'image_url', image_url: { url: `data:${a.image.mimeType};base64,${a.image.dataBase64}` } },
+      ]
+    : a.prompt;
+
   const body: Record<string, unknown> = {
     model: a.model,
     messages: [
       { role: 'system', content: a.system },
-      { role: 'user', content: a.prompt },
+      { role: 'user', content: userContent },
     ],
     temperature: a.temperature,
     max_tokens: a.maxTokens,
@@ -156,6 +187,8 @@ async function openaiGenerate(a: GenerateArgs): Promise<string> {
     } else if (res.status === 429) {
       message = `Rate limited by Trussed for "${a.model}".`;
       userMessage = 'Too many requests right now. Give it a few seconds.';
+    } else if (res.status === 400 && a.image) {
+      message = `Trussed rejected the image request for "${a.model}" (400) — likely no vision support: ${detail.slice(0, 200)}`;
     } else {
       message = `Model call failed (${res.status}). ${detail.slice(0, 200)}`;
     }
@@ -178,6 +211,9 @@ export interface GenerateOptions {
   maxTokens?: number;
   json?: boolean;
   timeoutMs?: number;
+  /** Attach one image to the request. Supported by all providers; unverified
+   * for Trussed until tested against a live vision-capable backend. */
+  image?: GenerateImage;
 }
 
 /** Raw text generation with retry. */
@@ -201,6 +237,7 @@ export async function generate(opts: GenerateOptions): Promise<string> {
         maxTokens: opts.maxTokens ?? 4096,
         json: opts.json ?? false,
         timeoutMs: opts.timeoutMs ?? 45000,
+        image: opts.image,
       };
       return cfg.kind === 'google' ? await googleGenerate(args) : await openaiGenerate(args);
     } catch (err) {

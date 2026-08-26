@@ -52,13 +52,23 @@ _against_ this problem statement as an academic project, not as a competition en
 | **Adults** making everyday supplement decisions | Is this worth taking? Is this dose safe?         | Cited answers, Simple or Standard reading level                                |
 | **Pregnant / breastfeeding people**             | NIH publishes distinct amounts for this group    | Session-only age/sex/pregnancy context steers which NIH row applies, without storing health data |
 | **People managing a stack of supplements**      | Products fine individually can be unsafe combined | Deterministic per-nutrient cumulative-dose check against NIH upper limits (My Stack) |
-| **Spanish-speaking users**                      | Health-equity gap in supplement literacy         | **Not yet shipped.** Pipeline retrieves NIH's own Spanish fact sheets rather than machine-translating, but that corpus isn't ingested yet — see §2.2.2. |
+| **People on prescription/OTC medications**      | Want to know if a supplement they take interacts with a medication | Saved medication list (My Stack → Medications tab) checked against NIH fact-sheet interaction language for each saved supplement — see §2.2.2 |
+| **People holding a physical product**           | Reading a label and doing the math by hand is friction | Photograph a Supplement Facts panel; a vision model transcribes doses directly into My Stack — see §2.2.2 |
+| **Spanish-speaking users**                      | Health-equity gap in supplement literacy         | **Not yet shipped.** Pipeline retrieves NIH's own Spanish fact sheets rather than machine-translating, but that corpus isn't ingested yet, and the UI toggle is currently hidden rather than left visibly broken — see §2.2.2. |
 | **Clinicians** (indirect)                       | Patients arrive with unsourced beliefs           | Decision Card gives patients sourced questions to ask                          |
 
 *(Original plan additionally scoped Teen/Senior/Caregiver reading modes and a
 Claim Check feature for viral marketing claims. Both were cut during the build —
 see "Explicitly cut" below — in favor of finishing the privacy-preserving
 personalization and deterministic dose-checking that actually shipped.)*
+
+**Also worth noting.** The privacy design in §2.2.2 originally dropped a
+`medications` table specifically so "we don't collect medications" was
+verifiable by reading the schema. That was reversed on Aug 26 for the
+interaction-check feature above — deliberately and narrowly: only user-entered
+medication *names* for that one feature, never health conditions, which are
+still never collected. See §2.2.2 and `design.md` "Privacy design" for the
+full reasoning.
 
 **Non-users, explicitly.** ClearLabel does not serve people seeking a diagnosis,
 a personal dosing prescription, or advice about their own medications. Those
@@ -88,7 +98,7 @@ supplement substitutes for treatment.
 
 | Gate requirement                                                                            | How ClearLabel addresses it                                                                                                                                                                                                                       | Status                 |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| **AI Integration** — meaningful AI feature, not a chatbot wrapper                           | RAG over 579 chunks of NIH content: query embedding → pgvector cosine search → similarity floor → grounded generation with enforced citations and a three-way evidence/uncertainty/marketing split. The stack-safety check is deterministic TypeScript, not an agent — see §2.2.2 for why that's a deliberate choice. | ✅     |
+| **AI Integration** — meaningful AI feature, not a chatbot wrapper                           | RAG over 579 chunks of NIH content: query embedding → pgvector cosine search → similarity floor → grounded generation with enforced citations and a three-way evidence/uncertainty/marketing split. The stack-safety check is deterministic TypeScript, not an agent — see §2.2.2 for why that's a deliberate choice. Two more AI features shipped Aug 26: a vision-based label scanner (photo → structured doses) and a grounded supplement × medication interaction check — both in §2.2.2. | ✅     |
 | ↳ error handling                                                                            | Typed `LlmError` with a `userMessage` field separating internal detail from what users see. Config errors surface immediately; transient ones retry.                                                                                              | ✅                     |
 | ↳ loading states                                                                            | Skeleton placeholders during retrieval and generation; button disabled and relabeled.                                                                                                                                                             | ✅                     |
 | ↳ rate-limit handling                                                                       | Two backoff ladders: 429 → 1/2/4 s, 5xx → 5/10/20 s. Embedding pacing at 8 chunks / 5 s with 15/45/70/70 s backoff (must exceed the 60 s quota window).                                                                                           | ✅                     |
@@ -97,7 +107,7 @@ supplement substitutes for treatment.
 | **Authentication** — registration, login, protected routes, sessions, env vars              | Supabase Auth (JWT). `profiles` auto-created by an `on_auth_user_created` trigger. Row-level security on every user-owned table. `src/middleware.ts` protects `/stack` and `/cards`.                                               | ✅                     |
 | **Documentation** — README with name, Z-number, FAU email, links, setup, stack; design docs | [`README.md`](README.md), [`docs/SETUP.md`](docs/SETUP.md), this file, [`design.md`](design.md).                                                                                                                                                  | ✅                     |
 | **Deployment** — live, publicly accessible                                                  | Vercel, live at <https://buildphase-notypos.vercel.app>. `/api/health` verifies every configured secret against its real dependency in production.                                                                                            | ✅                     |
-| **GitHub repository** — clean code, meaningful commits on main                              | 7 scoped commits; no secrets tracked; `.gitignore` verified against `.env.local`.                                                                                                                                                                 | ✅                     |
+| **GitHub repository** — clean code, meaningful commits on main                              | Clean, scoped commit history on `main` — each commit is a single feature or fix (see `git log --oneline`); no secrets tracked; `.gitignore` verified against `.env.local`.                                                                                                                                                                 | ✅                     |
 | **Demo Video** — 3–5 min covering all features                                              | Scheduled Aug 25.                                                                                                                                                                                                                                 | 📋                     |
 | **Canvas Submission** — repo URL                                                            | Intent slide submitted Aug 19. Final Aug 26.                                                                                                                                                                                                      | 🔨                     |
 
@@ -201,7 +211,7 @@ _MVP — required for the showcase:_
 
 1. ✅ Cited Q&A over the ODS corpus with enforced grounding
 2. ✅ Evidence / uncertainty / marketing card structure
-3. ✅ Reading level (Simple/Standard) + EN/ES toggle — English fully functional; Spanish corpus not yet ingested (see §2.2.2)
+3. ✅ Reading level (Simple/Standard). English only — the EN/ES toggle was removed from the UI on Aug 25 (`src/app/page.tsx` locks `language` to `'en'`) rather than ship a control that silently failed; see §2.2.2.
 4. ✅ Measured refusal threshold
 5. ✅ Authentication with protected routes
 6. ✅ My Stack: view + add + remove + deterministic upper-limit/interaction check
@@ -209,11 +219,19 @@ _MVP — required for the showcase:_
 
 _Nice-to-have — cut first under time pressure:_
 
-- Label scan via the NIH DSLD API with vision OCR fallback
+- ✅ Label scan — shipped Aug 26 as vision-model OCR only (`src/app/scan`,
+  `src/lib/vision/scan-label.ts`): a photo is transcribed directly into structured
+  doses. The DSLD barcode-lookup half originally scoped here was **not** built —
+  every scan goes through the vision model, no barcode path exists.
+- ✅ Supplement × medication interaction check — shipped Aug 26
+  (`src/lib/rag/interactions.ts`, `/api/interactions`). Required reintroducing a
+  `medications` table (migration `0003`, reversing part of the Aug privacy
+  redesign) — see §2.2.2 and the note in §1.3.
 - ✅ Decision Card export — shipped (create/list/delete, clinician questions, print)
 - Voice input (Web Speech API)
 - Spanish corpus ingest (`--lang es`; pipeline supports it, corpus not yet loaded —
-  toggle is visible in the UI and currently returns a refusal for every question)
+  the toggle was removed from the UI on Aug 25 rather than left visibly returning a
+  refusal for every question)
 - Health-professional corpus variant
 
 _Explicitly cut:_ gamification (high build cost, low payoff in a 10-minute demo,
@@ -278,6 +296,40 @@ requests unfiltered ranked results and applies the similarity floor in TypeScrip
 deliberately, so near-misses can be logged (`best was 0.412 — VitaminD-Consumer /
 Can vitamin D be harmful?`). That log is how the threshold gets tuned instead of guessed.
 
+**Two more model-backed features, added Aug 26.**
+
+_Label scanner_ (`src/lib/vision/scan-label.ts`, `/api/scan`) — a photographed
+Supplement Facts panel is sent to a vision-capable model with a schema forcing
+`{productName, items[], readable, note}`; the model transcribes only what's
+printed, never judges whether a dose is safe. It tries three model candidates in
+order (`trussed-openai/gpt-5.4` → `trussed-gemini/gemini-2.5-pro` →
+`google/gemini-3.6-flash`) and falls through on failure — Trussed vision support
+was unverified going in, so the fallback exists because the first candidate
+might simply not support images server-side, not as a resilience nicety. The
+route itself requires no sign-in (reading a photo touches no one's data,
+nothing is stored); saving the scanned items to My Stack still requires an
+account, enforced by Supabase RLS on the actual write. Results are tagged
+against `nutrient_limits` so the UI can flag, at scan time, which rows the
+dose-safety check will actually be able to use.
+
+_Interaction check_ (`src/lib/rag/interactions.ts`, `/api/interactions`) — the
+second consumer of the retrieval layer besides Ask. For each saved supplement it
+retrieves the fact sheet plus its safety sections (the same
+`retrieveSafetySections()` Ask uses) and asks the model, constrained to a zod
+schema, whether the excerpts name a given saved medication or its drug class in
+an interaction/caution context. The system prompt is explicit that "not
+mentioned" must never be reported as "safe" — absence of a mention is not
+evidence of safety. This is the one place the model reasons over free text
+instead of a lookup table, because a drug interaction is a claim in prose, not a
+number in an NIH table the way an upper limit is.
+
+Building the interaction check required a real, informed reversal:
+`0002_privacy.sql` had dropped the `medications` table specifically so "we don't
+collect medications" was verifiable by reading the schema. `0003_medications.sql`
+recreates it, scoped narrowly — RLS-protected, holding only user-entered names,
+used only for this feature. Health **conditions** are still never collected
+anywhere in the app. See `design.md` "Privacy design" for the updated table.
+
 **Multi-step orchestration — deliberately not agentic.**
 
 The original plan called this section "Agentic AI patterns": an LLM agent with
@@ -328,7 +380,8 @@ sections.
 | Embedding API 429                 | Backoff exceeding the 60 s quota window                | ✅     |
 | Generation 429 / 5xx              | Retry ladders; then a user-facing message              | ✅     |
 | Generation returns malformed JSON | zod validation → one reprompt → typed error            | ✅     |
-| Model provider fully down         | Fall back to the alternate provider                    | 📋     |
+| Model provider fully down (text)  | Fall back to the alternate provider                    | 📋     |
+| Vision model rejects the image    | Try the next candidate (Trussed → Trussed-Gemini → Google), then a user-facing message | ✅     |
 | Repeat question                   | Redis cache keyed on `(question, audience, language)`  | 📋     |
 | Demo-day network failure          | Pre-seeded account + cached responses + recorded video | 📋     |
 
@@ -392,7 +445,7 @@ key rotation before the showcase, `gitleaks` in CI.
 | Rate limiting                                 | ✅ in-memory, 10 req/min/IP → 📋 Redis-backed (per-instance memory resets on Vercel)                                                                                                                                                                                                   |
 | Input validation                              | ✅ zod on every route boundary; length-bounded questions                                                                                                                                                                                                                               |
 | Prompt-injection defense                      | ✅ partially — the corpus is trusted NIH content and users cannot add to it, which removes the main injection vector. User text is confined to a question field, never concatenated into the system prompt. 📋 output validation that citation indices reference real retrieved chunks |
-| Row-level security                            | ✅ on all seven user-owned tables; `messages` inherits ownership through its conversation                                                                                                                                                                                              |
+| Row-level security                            | ✅ on every user-owned table, including `medications` reintroduced in `0003_medications.sql`; `messages` inherits ownership through its conversation                                                                                                                                                                                              |
 | CORS                                          | 📋 same-origin only                                                                                                                                                                                                                                                                    |
 | HTTPS/SSL                                     | ✅ Vercel-enforced                                                                                                                                                                                                                                                                     |
 | Security headers (CSP, HSTS, X-Frame-Options) | 📋 `next.config.ts`                                                                                                                                                                                                                                                                    |
@@ -412,6 +465,10 @@ and fixes documented in `docs/security-audit.md`.
 Google rates (embedding $0.15/1M tokens; `gemini-2.5-flash` $0.30 in / $2.50 out).
 Generation runs on FAU Trussed at no cost to the project, so the Gemini generation
 figure is what it _would_ cost if the fallback carried production traffic.
+**Note:** that figure prices the now-retired `gemini-2.5-flash`; Google's
+replacement `gemini-3.6-flash` has different published rates that haven't been
+re-checked here — treat this column as illustrative, not current, until
+someone looks up the new price.
 
 _One-time corpus ingest:_ 579 chunks × ~300 tokens ≈ **174k tokens ≈ $0.03**.
 Full re-ingest is required only when the embedding model changes.
@@ -498,6 +555,16 @@ account that owns the Vercel project. Live as of Aug 25 at
 
 ### Aug 26 — submission
 
+- Shipped, uncommitted until today: label scanner (vision OCR), supplement ×
+  medication interaction check, `medications` table reintroduced
+  (`0003_medications.sql`, narrowly scoped — see §2.2.2), My Stack reorganized
+  into Supplements/Medications tabs. `/scan` is deliberately public (reading a
+  photo touches no data); the routes that actually write data
+  (`/api/interactions`, `/api/stack-check`) require sign-in.
+- `plan.md`, `design.md`, `README.md` audited line-by-line against the actual
+  repo (git log, migrations, middleware, source) and corrected — including the
+  Spanish toggle, which was already hidden from the UI on Aug 25 but the docs
+  still described as visible, and a stale "7 commits" count.
 - **Deliverables:** final polish; all artifacts linked from README; **Canvas
   submission by 11:59 PM.**
 - No buffer day remains — Aug 26 is deadline day, not a reserve.
@@ -520,3 +587,4 @@ account that owns the Vercel project. Live as of Aug 25 at
 | No demo-day network fallback                | Medium     | Not yet built; consider a cached-response or recorded-video backup   |
 | Spanish toggle still broken if not fixed    | Medium     | Documented honestly either way (§1.3, §2.2.2); hide the toggle if the ingest doesn't land in time |
 | Demo video / pitch deck time                | High       | Consistently the most underestimated item across every version of this plan |
+| Scanner/interaction check are brand-new, un-rehearsed | Medium | Built and typechecked Aug 26 but not yet run through a full demo rehearsal — worth a manual pass before Aug 28 |

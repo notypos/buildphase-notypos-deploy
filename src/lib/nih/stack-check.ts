@@ -97,6 +97,19 @@ function totalByNutrient(entries: StackEntry[]) {
  * `no_limit_published` finding rather than silence. A safety tool that omits
  * what it could not check reads as "all clear" when it isn't.
  */
+/**
+ * Canonical keys of every nutrient NIH publishes ANY limit data for
+ * (upper limit or not — just "is this nutrient in the table at all").
+ * Used by the scanner to flag, right at scan time, which extracted items
+ * the dose-safety check will actually be able to use.
+ */
+export async function trackedNutrientKeys(): Promise<Set<string>> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase.from('nutrient_limits').select('supplement');
+  if (error) throw new Error(`Could not load nutrient limits: ${error.message}`);
+  return new Set((data ?? []).map((r) => canonicalNutrient(r.supplement)));
+}
+
 export async function checkStack(entries: StackEntry[], person: PersonContext): Promise<Finding[]> {
   const findings: Finding[] = [];
   const totals = totalByNutrient(entries);

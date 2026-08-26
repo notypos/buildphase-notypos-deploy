@@ -16,7 +16,7 @@ Plain-language answers about dietary supplements, grounded in NIH Office of Diet
 | One-page showcase summary | [`docs/ClearLabel_Showcase_Intent.pptx`](docs/ClearLabel_Showcase_Intent.pptx) |
 | Project plan              | [`plan.md`](plan.md)                                                           |
 | Technical design          | [`design.md`](design.md)                                                       |
-| Database schema           | [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), [`0002_privacy.sql`](supabase/migrations/0002_privacy.sql) |
+| Database schema           | [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), [`0002_privacy.sql`](supabase/migrations/0002_privacy.sql), [`0003_medications.sql`](supabase/migrations/0003_medications.sql) |
 | Retrieval evaluation      | See [Retrieval quality](#retrieval-quality) below                             |
 | Production health check   | [`/api/health`](https://buildphase-notypos.vercel.app/api/health) · [`/health`](https://buildphase-notypos.vercel.app/health) |
 
@@ -29,8 +29,9 @@ ClearLabel puts that same NIH evidence behind a question box.
 
 The retrieval pipeline is built to answer in Spanish from NIH's own
 Spanish-language fact sheets rather than machine-translating the English ones —
-but that corpus is not yet ingested, so the Spanish toggle currently returns a
-refusal for every question. See [Not yet built](#not-yet-built).
+but that corpus is not yet ingested, so Spanish isn't available yet. The UI
+toggle was removed on Aug 25 rather than ship a control that silently failed.
+See [Not yet built](#not-yet-built).
 
 ## Features
 
@@ -41,17 +42,29 @@ refusal for every question. See [Not yet built](#not-yet-built).
 - **Answer cards** — answers render as _What the evidence shows_ / _What's still
   uncertain_ / _What the marketing claims_, plus conditional sections when the
   retrieved fact sheet has relevant safety, interaction, or dosage content.
-- **Reading level** — Simple or Standard, plus an English/Spanish toggle (Spanish
-  is UI-complete but not functional yet — see below).
+- **Reading level** — Simple or Standard. English only for now — the
+  English/Spanish toggle was removed from the UI until the Spanish corpus is
+  actually ingested (see [Not yet built](#not-yet-built)).
 - **Session-only personalization** — age, sex, and pregnancy/breastfeeding status.
   Lives in `sessionStorage` only: never written to a database, never logged, never
-  sent to an embedding call. Health conditions and medications are deliberately
-  **not collected at all** — see [Privacy design](#privacy-design).
-- **My Stack** — add and remove the supplements you take. A deterministic checker
-  computes
-  per-nutrient totals across products against NIH upper limits and flags
-  cumulative-dose and no-published-limit cases. No medications or conditions are
-  stored alongside it.
+  sent to an embedding call. Health **conditions** are deliberately never
+  collected. **Medications** are the one exception (added Aug 26, for the
+  interaction check below) — see [Privacy design](#privacy-design).
+- **My Stack** — add and remove the supplements you take (typed, or scanned —
+  see below). A deterministic checker computes per-nutrient totals across
+  products against NIH upper limits and flags cumulative-dose and
+  no-published-limit cases. A separate Medications tab lets you save medication
+  names for the interaction check; health conditions are still never stored.
+- **Label scanner** — photograph a Supplement Facts panel; a vision model
+  transcribes it into structured doses that plug directly into My Stack. No
+  sign-in required to scan — reading a photo touches no one's data — but saving
+  the result requires an account. Tries three model candidates in order and
+  falls through if one doesn't support images.
+- **Interaction check** — for each saved supplement, retrieves the NIH fact
+  sheet and asks the model (constrained to only what's stated in the retrieved
+  text) whether it names a saved medication or drug class in a
+  caution/interaction context. Absence of a mention is reported as "not
+  mentioned," never as "safe."
 - **Saved Decision Cards** — printable summaries with suggested clinician questions;
   create, list, and delete, protected behind sign-in.
 - **Production health check** — `/api/health` verifies every configured secret
@@ -60,12 +73,13 @@ refusal for every question. See [Not yet built](#not-yet-built).
 
 ### Not yet built
 
-- **Spanish retrieval** — the language toggle and prompt plumbing exist, but the
-  Spanish (`DatosEnEspanol`) NIH fact sheets were never run through
-  `scripts/ingest.ts --lang es`. Every Spanish question currently searches an empty
-  set, falls below the similarity floor, and refuses.
-- **Label scanner** — DSLD barcode lookup with vision-model OCR fallback. Planned,
-  not implemented.
+- **Spanish retrieval** — the retrieval pipeline supports it, but the Spanish
+  (`DatosEnEspanol`) NIH fact sheets were never run through
+  `scripts/ingest.ts --lang es`. The language toggle was removed from the UI on
+  Aug 25 rather than ship a control that would silently fail.
+- **DSLD barcode lookup** — the label scanner that shipped Aug 26 is vision-OCR
+  only; scanning a barcode against NIH's DSLD database was the original plan
+  for this feature and was not built.
 
 ## AI integration
 
@@ -78,6 +92,8 @@ refusal for every question. See [Not yet built](#not-yet-built).
 | Grounding                   | answers are generated only from retrieved chunks; chunk ids stored per message                                               |
 | Refusal                     | below a measured cosine floor of 0.66 the app refuses and never calls the model                                              |
 | Failure handling            | 429 → 1/2/4s backoff · 5xx → 5/10/20s backoff · wall-clock timeouts                                                          |
+| Vision (label scan)         | Three model candidates tried in order (`gpt-5.4` → `gemini-2.5-pro` → `gemini-3.6-flash`) — Trussed's image support was unverified, so this discovers it at runtime |
+| Second RAG feature          | `/api/interactions` retrieves each supplement's fact sheet + safety sections and asks the model to report only what's stated about a saved medication — never infers safety from silence |
 
 Embeddings are Gemini-only — Trussed doesn't expose a working `/embeddings`
 endpoint (verified: not on that key's model pool). Gemini's free tier trains on
@@ -94,16 +110,22 @@ about retention and disclosure, so that's what the design targets:
 | Data                                 | Where it lives                                  |
 | ------------------------------------ | ------------------------------------------------ |
 | Age, sex, pregnancy/breastfeeding    | `sessionStorage` only — never written, never logged |
-| Health conditions, medications       | **Never collected at all**                       |
+| Health conditions                    | **Never collected at all**                       |
+| Medications                          | Persisted (`medications`) — reintroduced Aug 26, scoped to the interaction check |
 | Supplements (My Stack)               | Persisted                                         |
 | Saved Decision Cards                 | Persisted                                         |
 
-Conditions and medications aren't collected because ODS discusses a limited set of
-them — most fields would return "no specific guidance," a bad trade for a medical
-history. Condition and interaction information instead comes from the retrieved
-fact sheet itself. Migration `0002_privacy.sql` dropped the `medications` and
-`stack_scans` tables and `profiles.life_stage` outright, so this claim is
-verifiable by reading the schema rather than trusting a comment.
+Conditions aren't collected because ODS discusses a limited set of them — most
+fields would return "no specific guidance," a bad trade for a medical history.
+Condition information instead comes from the retrieved fact sheet itself.
+
+**Medications are the one deliberate exception.** Migration `0002_privacy.sql`
+originally dropped the `medications` table outright, specifically so the
+"never collected" claim was verifiable by reading the schema.
+`0003_medications.sql` reverses that, narrowly, for the interaction check: the
+table holds only a user-entered name, RLS-scoped to its owner, used by nothing
+else in the app. Saved Decision Cards still redact medication names by default
+(`decision_cards.includes_medications`) unless the user opts in when saving.
 
 The system prompt enforces: *"Based on the information you provided, ODS
 documents…"* — never *"based on your medical history, this is safe for you."*
@@ -111,7 +133,8 @@ documents…"* — never *"based on your medical history, this is safe for you."
 ## Tech stack
 
 Next.js 16 (App Router) · TypeScript · Tailwind 4 · Supabase (Auth/JWT, Postgres,
-pgvector, RLS) · Google Gemini (embeddings) · FAU Trussed (generation) · Vercel.
+pgvector, RLS) · Google Gemini (embeddings + vision fallback) · FAU Trussed
+(generation + vision) · Vercel.
 
 ## Setup
 
@@ -120,9 +143,9 @@ npm install
 cp .env.example .env.local     # fill in Supabase + Gemini + Trussed keys
 ```
 
-Run `supabase/migrations/0001_init.sql` then `0002_privacy.sql` in the Supabase SQL
-editor. If `create extension vector` errors, enable **Vector** under Database →
-Extensions first.
+Run `supabase/migrations/0001_init.sql`, then `0002_privacy.sql`, then
+`0003_medications.sql` in the Supabase SQL editor. If `create extension vector`
+errors, enable **Vector** under Database → Extensions first.
 
 Load the corpus:
 

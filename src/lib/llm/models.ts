@@ -15,7 +15,10 @@ export const DEFAULT_MODEL_ID = 'trussed-openai/gpt-5.4';
 export const LLM_OPTIONS: LlmOption[] = [
   { id: 'trussed-openai/gpt-5.4', providerId: 'trussed-openai', model: 'gpt-5.4', label: 'GPT-5.4 · FAU Trussed' },
   { id: 'trussed-gemini/gemini-2.5-pro', providerId: 'trussed-gemini', model: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro · FAU Trussed' },
-  { id: 'google/gemini-2.5-flash', providerId: 'google', model: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash · Google direct' },
+  // google's own gemini-2.5-flash was retired for our key (404, "no longer
+  // available to new users") on 2026-08-25 — replaced with 3.6-flash, the
+  // model Google's own error message named as the successor.
+  { id: 'google/gemini-3.6-flash', providerId: 'google', model: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash · Google direct' },
   { id: 'trussed-openai/cogito:14b', providerId: 'trussed-openai', model: 'cogito:14b', label: 'Cogito 14B · FAU Trussed' },
 ];
 
@@ -27,8 +30,17 @@ export function findModelOption(id?: string | null): LlmOption {
   return LLM_OPTIONS.find((o) => o.id === id) ?? defaultOption();
 }
 
-// Vision-capable options, for the label-scan OCR fallback.
-export const VISION_MODEL_ID = 'google/gemini-2.5-flash';
+// Vision candidates for the label scanner, tried in order until one works.
+// Trussed first: it draws on FAU's provisioned budget instead of the
+// personal free-tier Google key, so a demo doesn't depend on personal quota.
+// Direct Google is the last-resort fallback. Not every candidate is
+// guaranteed to actually support image input server-side — scan-label.ts
+// catches a failure and moves to the next one rather than assuming.
+export const VISION_MODEL_CANDIDATES = [
+  'trussed-openai/gpt-5.4',
+  'trussed-gemini/gemini-2.5-pro',
+  'google/gemini-3.6-flash',
+];
 
 // Embeddings are Google-direct only. Trussed may or may not expose
 // /embeddings — verify before depending on it.
