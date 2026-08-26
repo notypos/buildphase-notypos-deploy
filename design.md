@@ -955,6 +955,28 @@ client-side barcode decoding at all. This section is kept rather than
 deleted because the reasoning about format-detection reliability is still
 correct — it just turned out not to be the thing that broke.
 
+### Auto-capture is a stillness check, not a decode step
+
+After the barcode cut above, the obvious next ask was "can it at least
+auto-detect the label instead of making someone tap a button?" The
+tempting version of that -- keep sampling frames and try to recognize the
+product continuously -- isn't practical here: it would mean calling the
+vision model many times a second, which is slow, costs real money per
+frame, and would hit rate limits almost immediately. What actually shipped
+in `ScanProductForm.tsx` is much dumber and, because of that, reliable: a
+few times a second it draws the video onto a tiny (32x24) offscreen canvas,
+converts to grayscale, and compares it to the previous sample. Once the
+frame stops changing for ~3 samples in a row (roughly a second) and isn't
+just a dark/covered lens, it captures one full-resolution frame and runs it
+through the exact same `doScan()` call a manual tap would. It never tries
+to read or classify anything about the frame itself -- that's still the
+vision model's job, after one photo is chosen. If two auto-captures in a
+row come back with no DSLD match, auto-mode turns itself off for the rest
+of that scan (reset by "Scan another product," retake, or upload) and the
+existing manual Capture button becomes the only way forward, so a bad
+lighting condition or an unusual bottle can't trap the user in a loop that
+keeps guessing on its own.
+
 ### A fallback chain for vision, not for text generation
 
 The label scanner tries three model candidates in sequence

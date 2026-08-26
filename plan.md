@@ -236,6 +236,17 @@ _Nice-to-have — cut first under time pressure:_
   the DSLD search-and-fetch half is typechecked against DSLD's real response
   shapes but this sandbox's network egress blocks api.ods.od.nih.gov, so it
   wants one real test run with normal internet access before the Friday demo.
+- ✅ Auto-capture, added after real-device feedback — the camera snaps on its
+  own once the frame stops moving for ~1s (frame-diff stillness check, not
+  symbol decoding), then falls back to a mandatory manual Capture button
+  after two auto-attempts find no match, so it can't loop forever guessing.
+- ✅ Fixed a real correctness bug: dose-safety checks were reporting "NIH has
+  no limit" for nutrients NIH does track, because a label's (or the vision
+  model's) wording didn't match NIH's own fact-sheet spelling — "Thiamine"
+  vs NIH's "Thiamin", "Folic Acid" vs NIH's "Folate", and similar B-vitamin
+  chemical-form names. `canonicalNutrient()` now maps ~20 known alternate
+  names to their NIH fact-sheet term before matching; regression tests for
+  the exact reported cases live in `scripts/test-units.ts`.
 - ✅ Supplement × medication interaction check — shipped Aug 26
   (`src/lib/rag/interactions.ts`, `/api/interactions`). Required reintroducing a
   `medications` table (migration `0003`, reversing part of the Aug privacy

@@ -70,6 +70,11 @@ See [Not yet built](#not-yet-built).
   Aug 26 morning, then cut that same day when testing on the actual demo
   hardware/browser showed decoding a real barcode off a real camera feed
   wasn't reliable in practice, not just a theoretical browser-support gap.
+  The camera also auto-captures once the frame holds still for about a
+  second — a plain stillness check on downsampled video frames, not symbol
+  decoding, so it doesn't inherit the barcode approach's failure mode. After
+  two auto-captures in a row come back with no match, it stops guessing and
+  hands control to a manual Capture button instead of looping forever.
 - **Interaction check** — for each saved supplement, retrieves the NIH fact
   sheet and asks the model (constrained to only what's stated in the retrieved
   text) whether it names a saved medication or drug class in a

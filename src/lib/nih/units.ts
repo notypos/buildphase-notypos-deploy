@@ -62,11 +62,58 @@ export function formatFromMicrograms(mcg: number): string {
 }
 
 /**
+ * Chemical-form and alternate-name synonyms whose canonical NIH fact-sheet
+ * title uses different wording entirely -- not a spacing/case variant the
+ * regexes above already handle, an unrelated word. NIH's own fact sheet
+ * (and this app's nutrient_limits rows, named straight from that fact
+ * sheet's slug) is titled "Thiamin"; a label -- or the vision model reading
+ * one -- often renders it "Thiamine". Same problem for "Folic Acid" vs
+ * NIH's "Folate". Without this, the app reports "NIH has no limit for
+ * Thiamine" when what's actually true is "NIH's limit is filed under a
+ * different spelling" -- confidently wrong, not merely incomplete.
+ */
+const NUTRIENT_ALIASES: Record<string, string> = {
+  thiamine: 'thiamin',
+  'vitamin b1': 'thiamin',
+  'vitamin b2': 'riboflavin',
+  'vitamin b3': 'niacin',
+  niacinamide: 'niacin',
+  nicotinamide: 'niacin',
+  'nicotinic acid': 'niacin',
+  pyridoxine: 'vitamin b6',
+  'pyridoxine hcl': 'vitamin b6',
+  pyridoxal: 'vitamin b6',
+  'vitamin b5': 'pantothenic acid',
+  'vitamin b7': 'biotin',
+  'vitamin h': 'biotin',
+  'vitamin b9': 'folate',
+  'folic acid': 'folate',
+  folacin: 'folate',
+  methylfolate: 'folate',
+  'l methylfolate': 'folate',
+  cobalamin: 'vitamin b12',
+  cyanocobalamin: 'vitamin b12',
+  methylcobalamin: 'vitamin b12',
+  hydroxocobalamin: 'vitamin b12',
+  'ascorbic acid': 'vitamin c',
+  tocopherol: 'vitamin e',
+  retinol: 'vitamin a',
+  'retinyl palmitate': 'vitamin a',
+  'retinyl acetate': 'vitamin a',
+  phylloquinone: 'vitamin k',
+  menaquinone: 'vitamin k',
+  'vitamin k1': 'vitamin k',
+  'vitamin k2': 'vitamin k',
+};
+
+/**
  * Normalize a nutrient name for cross-product matching, so "Vitamin D3",
- * "vitamin d-3", and "Vitamin D (as cholecalciferol)" total together.
+ * "vitamin d-3", and "Vitamin D (as cholecalciferol)" total together --
+ * and, via NUTRIENT_ALIASES above, so "Thiamine" and "Thiamin" (or "Folic
+ * Acid" and "Folate") are recognized as the same nutrient too.
  */
 export function canonicalNutrient(name: string): string {
-  return name
+  const cleaned = name
     .toLowerCase()
     .replace(/\(.*?\)/g, ' ')
     .replace(/\b(as|from|natural|synthetic|d-alpha|dl-alpha)\b/g, ' ')
@@ -74,4 +121,5 @@ export function canonicalNutrient(name: string): string {
     .replace(/vitamin\s*b\s*-?\s*(\d+)/, 'vitamin b$1')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+  return NUTRIENT_ALIASES[cleaned] ?? cleaned;
 }

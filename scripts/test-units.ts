@@ -41,6 +41,16 @@ check('vitamin d-3 == Vitamin D', canonicalNutrient('vitamin d-3'), canonicalNut
 check('Vitamin B-12 == Vitamin B12', canonicalNutrient('Vitamin B-12'), canonicalNutrient('Vitamin B12'));
 check('Zinc != Iron', canonicalNutrient('Zinc') === canonicalNutrient('Iron'), false);
 
+console.log('\nalternate/chemical-form names (the "app says no NIH limit" bug)');
+check('Thiamine == Thiamin (NIH fact sheet spelling)', canonicalNutrient('Thiamine'), canonicalNutrient('Thiamin'));
+check('Thiamin (as Thiamine Mononitrate) == Thiamin', canonicalNutrient('Thiamin (as Thiamine Mononitrate)'), canonicalNutrient('Thiamin'));
+check('Folic Acid == Folate (NIH fact sheet name)', canonicalNutrient('Folic Acid'), canonicalNutrient('Folate'));
+check('Folate (as Folic Acid) == Folate', canonicalNutrient('Folate (as Folic Acid)'), canonicalNutrient('Folate'));
+check('Pyridoxine == Vitamin B6', canonicalNutrient('Pyridoxine'), canonicalNutrient('Vitamin B6'));
+check('Cyanocobalamin == Vitamin B12', canonicalNutrient('Cyanocobalamin'), canonicalNutrient('Vitamin B12'));
+check('Ascorbic Acid == Vitamin C', canonicalNutrient('Ascorbic Acid'), canonicalNutrient('Vitamin C'));
+check('Niacinamide == Niacin', canonicalNutrient('Niacinamide'), canonicalNutrient('Niacin'));
+
 console.log('\nthe cumulative case this exists for');
 // Two ordinary products, each comfortably under the limit on its own.
 const multi = toMicrograms(2000, 'IU', 'Vitamin D')!;      // a multivitamin
