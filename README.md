@@ -60,11 +60,15 @@ See [Not yet built](#not-yet-built).
   sign-in required to scan — reading a photo touches no one's data — but saving
   the result requires an account. Tries three model candidates in order and
   falls through if one doesn't support images.
-- **Barcode scanner** — scans live via the camera (`@zxing/browser`, entirely
-  client-side) and resolves the code through a free UPC database to a product
-  name, then looks that name up in NIH's own DSLD database and shows the
-  manufacturer-submitted label as the source of truth — not a re-read of a
-  photo. Falls back to the label scanner above when nothing matches.
+- **Barcode scanner** — scans live via the camera, entirely client-side, using
+  the browser's native `BarcodeDetector` when it actually supports the needed
+  formats (checked at runtime, not just feature-detected — some Chrome builds
+  expose the API but omit UPC-A) and falling back to `@zxing/browser`
+  otherwise, notably on Safari/iOS where the native API doesn't exist at all.
+  Either way, the decoded code resolves through a free UPC database to a
+  product name, then looks that name up in NIH's own DSLD database and shows
+  the manufacturer-submitted label as the source of truth — not a re-read of
+  a photo. Falls back to the label scanner above when nothing matches.
 - **Interaction check** — for each saved supplement, retrieves the NIH fact
   sheet and asks the model (constrained to only what's stated in the retrieved
   text) whether it names a saved medication or drug class in a

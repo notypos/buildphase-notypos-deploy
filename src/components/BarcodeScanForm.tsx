@@ -23,16 +23,71 @@ interface LookupResult {
   items?: FoundItem[];
 }
 
+// --- Native Shape Detection API (BarcodeDetector) -------------------------
+//
+// Not in every TS lib.dom yet, and the whole point here is to feature-detect
+// it defensively at runtime anyway -- so this is typed by hand rather than
+// trusted to ambient globals, and every call is behind a try/catch.
+interface NativeDetection {
+  rawValue: string;
+}
+interface NativeBarcodeDetector {
+  detect(source: HTMLVideoElement): Promise<NativeDetection[]>;
+}
+interface NativeBarcodeDetectorCtor {
+  new (options?: { formats: string[] }): NativeBarcodeDetector;
+  getSupportedFormats(): Promise<string[]>;
+}
+
+// The formats actually printed on US supplement bottles. Deliberately
+// narrower than "does BarcodeDetector exist at all": Chrome's own docs show
+// getSupportedFormats() omitting upc_a on at least macOS, even though the
+// API itself is present -- checking for the constructor alone would look
+// like success and then never fire a detection. code_128 is included
+// because a few products use it instead of a retail UPC/EAN.
+const WANTED_FORMATS = ['upc_a', 'upc_e', 'ean_13', 'ean_8', 'code_128'];
+
+function getNativeBarcodeDetectorCtor(): NativeBarcodeDetectorCtor | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as { BarcodeDetector?: NativeBarcodeDetectorCtor };
+  return w.BarcodeDetector ?? null;
+}
+
+/** Empty array means "don't use the native path" -- either the API doesn't
+ *  exist here, or it exists but supports none of the formats we need. */
+async function nativeFormatsAvailable(): Promise<string[]> {
+  const Ctor = getNativeBarcodeDetectorCtor();
+  if (!Ctor) return [];
+  try {
+    const supported = await Ctor.getSupportedFormats();
+    return WANTED_FORMATS.filter((f) => supported.includes(f));
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Live barcode scanning via @zxing/browser -- runs entirely client-side
- * against the camera stream, no server round trip just to detect a code.
- * Once a barcode is decoded, /api/product-lookup does the actual
+ * Live barcode scanning with two engines. Native BarcodeDetector is tried
+ * first when the browser actually supports our formats -- it's free (no
+ * bundle download, no library), fast, and covers Chrome on Android and most
+ * desktop Chrome. @zxing/browser (already a dependency for the reasons
+ * above) is the fallback for everything else -- notably Safari/iOS, which
+ * doesn't implement BarcodeDetector at all. Either way, once a code is
+ * decoded, /api/product-lookup does the actual
  * barcode -> UPC database -> DSLD chain (see that route for why two hops).
  */
 export default function BarcodeScanForm({ onNoMatch }: { onNoMatch?: () => void }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const controlsRef = useRef<IScannerControls | null>(null);
+
+  // zxing engine state
+  const zxingControlsRef = useRef<IScannerControls | null>(null);
+  // native engine state
+  const nativeStreamRef = useRef<MediaStream | null>(null);
+  const nativeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const nativeBusyRef = useRef(false);
+
+  const engineRef = useRef<'native' | 'zxing' | null>(null);
   const lastCodeRef = useRef<string | null>(null);
   const lookingRef = useRef(false);
 
@@ -46,8 +101,15 @@ export default function BarcodeScanForm({ onNoMatch }: { onNoMatch?: () => void 
   const [savingName, setSavingName] = useState<string | null>(null);
 
   function stopScanning() {
-    controlsRef.current?.stop();
-    controlsRef.current = null;
+    if (nativeIntervalRef.current) {
+      clearInterval(nativeIntervalRef.current);
+      nativeIntervalRef.current = null;
+    }
+    nativeStreamRef.current?.getTracks().forEach((t) => t.stop());
+    nativeStreamRef.current = null;
+    zxingControlsRef.current?.stop();
+    zxingControlsRef.current = null;
+    engineRef.current = null;
     setScanning(false);
   }
 
@@ -84,6 +146,68 @@ export default function BarcodeScanForm({ onNoMatch }: { onNoMatch?: () => void 
     }
   }
 
+  async function startNative(formats: string[]) {
+    const Ctor = getNativeBarcodeDetectorCtor();
+    if (!Ctor) return false;
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' },
+      audio: false,
+    });
+    nativeStreamRef.current = stream;
+    if (videoRef.current) videoRef.current.srcObject = stream;
+    engineRef.current = 'native';
+
+    const detector = new Ctor({ formats });
+    console.log('[barcode] using native BarcodeDetector', formats);
+
+    nativeIntervalRef.current = setInterval(() => {
+      if (nativeBusyRef.current || lookingRef.current || !videoRef.current) return;
+      nativeBusyRef.current = true;
+      detector
+        .detect(videoRef.current)
+        .then((detections) => {
+          const value = detections[0]?.rawValue;
+          if (value && value !== lastCodeRef.current) {
+            lastCodeRef.current = value;
+            void handleDecoded(value);
+          }
+        })
+        .catch(() => {
+          // A transient per-frame detection failure isn't a real error --
+          // same as zxing's continuous NotFoundException, just ignore it.
+        })
+        .finally(() => {
+          nativeBusyRef.current = false;
+        });
+    }, 300);
+
+    return true;
+  }
+
+  async function startZxing() {
+    const { BrowserMultiFormatReader } = await import('@zxing/browser');
+    const reader = new BrowserMultiFormatReader();
+    engineRef.current = 'zxing';
+    console.log('[barcode] using @zxing/browser fallback');
+
+    const controls = await reader.decodeFromConstraints(
+      { video: { facingMode: 'environment' } },
+      videoRef.current ?? undefined,
+      (result) => {
+        // `error` fires on essentially every frame with no code in view
+        // (zxing's NotFoundException) -- expected, not a failure, so it's
+        // deliberately not read here at all.
+        if (!result || lookingRef.current) return;
+        const text = result.getText();
+        if (text === lastCodeRef.current) return;
+        lastCodeRef.current = text;
+        void handleDecoded(text);
+      },
+    );
+    zxingControlsRef.current = controls;
+  }
+
   async function startScanning() {
     setCameraError(null);
     setResult(null);
@@ -91,30 +215,19 @@ export default function BarcodeScanForm({ onNoMatch }: { onNoMatch?: () => void 
     lastCodeRef.current = null;
 
     try {
-      // Lazy import: zxing pulls in its full decoding library, no reason to
-      // ship it in the initial bundle for people who never open the scanner.
-      const { BrowserMultiFormatReader } = await import('@zxing/browser');
-      const reader = new BrowserMultiFormatReader();
       setScanning(true);
-
-      const controls = await reader.decodeFromConstraints(
-        { video: { facingMode: 'environment' } },
-        videoRef.current ?? undefined,
-        (result) => {
-          // `error` fires on essentially every frame with no code in view
-          // (zxing's NotFoundException) -- that's expected, not a failure,
-          // so it's deliberately not read here at all.
-          if (!result || lookingRef.current) return;
-          const text = result.getText();
-          if (text === lastCodeRef.current) return;
-          lastCodeRef.current = text;
-          void handleDecoded(text);
-        },
-      );
-      controlsRef.current = controls;
+      const nativeFormats = await nativeFormatsAvailable();
+      if (nativeFormats.length > 0) {
+        const ok = await startNative(nativeFormats);
+        if (!ok) await startZxing();
+      } else {
+        // Lazy import: zxing pulls in its full decoding library, no reason
+        // to ship it to browsers that never need it (i.e. most of Chrome).
+        await startZxing();
+      }
     } catch {
       setCameraError('Could not access the camera — check your browser permissions.');
-      setScanning(false);
+      stopScanning();
     }
   }
 

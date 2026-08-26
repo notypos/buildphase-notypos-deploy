@@ -228,7 +228,11 @@ _Nice-to-have — cut first under time pressure:_
   to a product name via a free, keyless UPC database (UPCitemdb trial tier,
   ~100 lookups/day, no new cost), then that name is searched against NIH's
   DSLD API to pull the manufacturer-submitted label as the source of truth —
-  not a re-read of a photo. Falls back to the vision-OCR scanner above when
+  not a re-read of a photo. The scan itself uses two engines: the browser's
+  native `BarcodeDetector` when it actually reports support for UPC/EAN
+  formats (some Chrome builds expose the API but not those formats — checked
+  live, not assumed), falling back to `@zxing/browser` everywhere else,
+  including Safari/iOS where no native implementation exists at all. Falls back to the vision-OCR scanner above when
   either step finds no match, so it never dead-ends the way a database-only
   lookup would. **Not yet live-verified end to end** — this sandbox's network
   egress blocks both api.upcitemdb.com and api.ods.od.nih.gov, so the chain

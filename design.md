@@ -915,6 +915,23 @@ was made explicitly and documented in the migration itself rather than
 silently. See `plan.md` §1.3 and §2.2.2, and "Privacy design" in §4 of this
 document.
 
+### Two barcode-detection engines, not one
+
+`BarcodeScanForm.tsx` tries the browser's native `BarcodeDetector` first —
+free, no bundle download, and covers Chrome on Android plus most desktop
+Chrome. It does **not** trust `'BarcodeDetector' in window` alone: Chrome's
+own documentation shows `getSupportedFormats()` omitting `upc_a` on at least
+macOS even though the constructor exists, which would look like success and
+then silently never fire a detection on the exact format printed on most US
+supplement bottles. The actual check calls `getSupportedFormats()` and
+requires it to include at least one of `upc_a/upc_e/ean_13/ean_8/code_128`
+before using the native path at all. `@zxing/browser` (already a dependency
+for the label-photo scanner's image handling needs) is the fallback whenever
+that check fails — which is unconditional on Safari/iOS, where
+`BarcodeDetector` isn't implemented at all. This matters for a live demo
+specifically: "works on the developer's laptop" is not the same claim as
+"works on whatever device is in front of a judge."
+
 ### A fallback chain for vision, not for text generation
 
 The label scanner tries three model candidates in sequence
