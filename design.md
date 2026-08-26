@@ -561,9 +561,11 @@ vision candidates failed), 500 (unexpected). Same `LlmError.userMessage`
 convention as `/api/ask` — no provider text or stack traces reach the client,
 and image bytes are never logged.
 
-### `POST /api/scan-product` ✅ (DSLD half untested against live network calls)
+### `POST /api/scan-product` ✅ live-verified against DSLD
 
-**Request:** multipart form data, one `image` file of the product's front label.
+**Request:** multipart form data, either one `image` file of the product's
+front label, OR a `dsldId` field alone (no image) when the user is switching
+to one of the `alternates` from a previous response — see below.
 
 **Response 200 — matched**
 
@@ -573,7 +575,8 @@ and image bytes are never logged.
   "dsldId": "214893",
   "productName": "Chia Seeds",
   "brandName": "BareOrganics",
-  "items": [{ "labelName": "Fiber", "doseAmount": 5, "doseUnit": "g", "nihTracked": false }]
+  "items": [{ "labelName": "Fiber", "doseAmount": 5, "doseUnit": "g", "nihTracked": false }],
+  "alternates": [{ "id": "214900", "fullName": "Chia Seeds with Omega-3", "brandName": "BareOrganics" }]
 }
 ```
 
@@ -587,11 +590,14 @@ Supplement Facts scanner uses, but asks only for a brand and product name —
 much smaller ask of the model than transcribing a full ingredients table, and
 this half is exercised by the same infrastructure already proven live.
 `searchDsldByName()` / `getDsldLabel()` (`src/lib/dsld/client.ts`) then hit
-NIH's DSLD API, verified live against real responses on Aug 26. **Caveat:**
-the DSLD half has never actually been exercised end to end from a running
-server — this dev sandbox blocks egress to api.ods.od.nih.gov, so it's
-typechecked against a real, verified schema but not live-tested. First real
-test happens wherever this runs with normal internet access.
+NIH's DSLD API. **Live-verified Aug 26** on real hardware with normal
+internet access (this dev sandbox still can't reach api.ods.od.nih.gov
+itself, but the code that runs in production now has) — first real run
+matched correctly, then immediately surfaced the variant-matching bug
+covered in §8 ("Matching by name, not just brand"). `alternates` in the
+response above exists because of that bug: the same search's other
+same-brand hits, so a wrong auto-pick is a tap to correct, not a silent
+wrong answer.
 
 **Replaced approach:** an earlier same-day version of this route (`/api/product-
 lookup`) resolved a scanned *barcode* to a product via a UPC database
@@ -955,27 +961,87 @@ client-side barcode decoding at all. This section is kept rather than
 deleted because the reasoning about format-detection reliability is still
 correct — it just turned out not to be the thing that broke.
 
-### Auto-capture is a stillness check, not a decode step
+### Auto-capture is a stillness check, not a decode step -- and got cut too
 
 After the barcode cut above, the obvious next ask was "can it at least
 auto-detect the label instead of making someone tap a button?" The
 tempting version of that -- keep sampling frames and try to recognize the
-product continuously -- isn't practical here: it would mean calling the
+product continuously -- was never on the table: it would mean calling the
 vision model many times a second, which is slow, costs real money per
-frame, and would hit rate limits almost immediately. What actually shipped
-in `ScanProductForm.tsx` is much dumber and, because of that, reliable: a
-few times a second it draws the video onto a tiny (32x24) offscreen canvas,
-converts to grayscale, and compares it to the previous sample. Once the
-frame stops changing for ~3 samples in a row (roughly a second) and isn't
-just a dark/covered lens, it captures one full-resolution frame and runs it
-through the exact same `doScan()` call a manual tap would. It never tries
-to read or classify anything about the frame itself -- that's still the
-vision model's job, after one photo is chosen. If two auto-captures in a
-row come back with no DSLD match, auto-mode turns itself off for the rest
-of that scan (reset by "Scan another product," retake, or upload) and the
-existing manual Capture button becomes the only way forward, so a bad
-lighting condition or an unusual bottle can't trap the user in a loop that
-keeps guessing on its own.
+frame, and would hit rate limits almost immediately. What actually shipped,
+briefly, in `ScanProductForm.tsx` was much dumber: a few times a second it
+drew the video onto a tiny (32x24) offscreen canvas, converted to
+grayscale, and compared it to the previous sample. Once the frame stopped
+changing for ~3 samples in a row (roughly a second) and wasn't just a
+dark/covered lens, it captured one full-resolution frame and ran it through
+the exact same `doScan()` call a manual tap would -- never trying to read
+or classify the frame itself, only deciding *when* to take the photo. After
+two auto-captures in a row came back with no DSLD match, auto-mode turned
+itself off for the rest of that scan and handed back to manual Capture.
+
+**Update, later the same day: cut anyway.** Unlike the barcode engines,
+this one didn't fail on a fundamental technical gap -- the stillness logic
+worked as designed. It was cut because "worked as designed" wasn't the same
+as "felt reliable in actual use": real testing found it fired at the wrong
+moments often enough to be more annoying than the tap it was replacing.
+Reverted to manual-only. Kept as two separate lessons rather than folded
+into the barcode section above, because the failure mode here was
+different -- not a browser/hardware limitation, a UX-timing one -- and is
+worth remembering separately if camera automation comes up again.
+
+### Matching by name, not just brand -- and why not the manufacturer's website
+
+Real-device testing (Aug 26) surfaced a bug the sandbox never could: a photo
+of Nature Made's plain "Super B-Complex" got matched to DSLD's "Super
+B-Complex WITH VITAMIN C" -- a real, different product NIH separately lists
+under the same brand, with a different ingredient list. `pickBestMatch()`
+had trusted brand alone (see `dsld/client.ts`'s original docstring), and
+DSLD's own search happened to rank the Vitamin C variant first. That's a
+same-brand near-miss, which is worse than "not found": it's confidently
+wrong while still displaying "Sourced from NIH's Dietary Supplement Label
+Database... the manufacturer-submitted label NIH has on file," which reads
+as more authoritative than a guess.
+
+The fix keeps DSLD as the source of truth but stops trusting its search
+ranking blindly: `scoreMatches()` (new `src/lib/dsld/match.ts`, split out of
+`client.ts` specifically so it has no `server-only` import and can be unit
+tested with synthetic hits -- `scripts/test-dsld-match.ts` -- rather than
+needing a live network call) scores every candidate on how much its name
+overlaps what the vision model actually read off the bottle, and penalizes
+extra qualifying words ("with", "vitamin", "c") the photo never showed.
+The plain name wins over the fancier variant unless the photo itself named
+that variant. The route also now returns the search's other same-brand
+`alternates`, and the UI offers them as "not the right one?" buttons that
+re-fetch by id with no new photo -- because no ranking heuristic will be
+perfect, and a wrong pick should be a tap to correct, not silently trusted.
+
+**Why not the manufacturer's website instead?** The user's first instinct,
+reasonably, was: if DSLD can be ambiguous, why not read the nutrition facts
+straight from Nature Made's own product page for the exact SKU? Considered
+and set aside for now, for reasons specific to two days before a demo, not
+in principle:
+
+- It trades one ambiguity for a harder one. DSLD's ambiguity is "which of
+  a *known, finite* set of NIH-listed variants is this" -- solvable with
+  better matching, as above. A manufacturer's website is arbitrary HTML with
+  no shared schema across brands; finding "the exact right product page" for
+  a photographed bottle is close to the same unsolved problem the photo
+  identification step already exists to solve, now aimed at a much less
+  structured target with no government verification behind it.
+- It re-introduces exactly what this project's evidence/marketing split
+  exists to keep separate. NIH's fact sheets already distinguish "what the
+  evidence shows" from "what the marketing claims" (see the Ask feature);
+  pulling nutrition numbers from the seller's own marketing page for the
+  "source of truth" scan blurs that line for the one feature meant to be
+  the least ambiguous, government-sourced number on the page.
+- DSLD is not actually missing the data here -- both variants exist in it.
+  This was a matching bug, not a coverage gap, so the fix that actually
+  applies is a better match, not a different source.
+
+If DSLD coverage turns out to be the real limiter later (a product genuinely
+absent from DSLD, not just mismatched), the existing OCR label-scanner
+fallback already covers that case today without adding a second, unverified
+data source under time pressure.
 
 ### A fallback chain for vision, not for text generation
 

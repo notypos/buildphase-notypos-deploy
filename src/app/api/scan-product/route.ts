@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { identifyProduct } from '@/lib/vision/identify-product';
-import { searchDsldByName, getDsldLabel, pickBestMatch } from '@/lib/dsld/client';
+import { searchDsldByName, getDsldLabel, scoreMatches, type DsldLabel } from '@/lib/dsld/client';
 import { trackedNutrientKeys } from '@/lib/nih/stack-check';
 import { canonicalNutrient } from '@/lib/nih/units';
 import { LlmError } from '@/lib/llm';
@@ -25,6 +25,32 @@ function rateLimited(ip: string): boolean {
   return recent.length > MAX_PER_WINDOW;
 }
 
+async function buildMatchedResponse(
+  label: DsldLabel,
+  alternates: { id: string; fullName: string; brandName: string | null }[],
+) {
+  let tracked = new Set<string>();
+  try {
+    tracked = await trackedNutrientKeys();
+  } catch (err) {
+    console.warn('[scan-product] nutrient_limits lookup failed', err instanceof Error ? err.message : err);
+  }
+
+  return NextResponse.json({
+    matched: true,
+    dsldId: label.id,
+    productName: label.fullName,
+    brandName: label.brandName,
+    items: label.ingredients.map((ing) => ({
+      labelName: ing.name,
+      doseAmount: ing.amount,
+      doseUnit: ing.unit,
+      nihTracked: tracked.has(canonicalNutrient(ing.name)),
+    })),
+    alternates,
+  });
+}
+
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local';
   if (rateLimited(ip)) {
@@ -36,6 +62,27 @@ export async function POST(req: Request) {
     form = await req.formData();
   } catch {
     return NextResponse.json({ error: 'Send the photo as multipart form data.' }, { status: 400 });
+  }
+
+  // A user picking a different variant from a previous scan's "not the right
+  // one?" list re-submits just the chosen DSLD id -- no new photo, no new
+  // vision call, straight to that exact record.
+  const dsldIdOverride = form.get('dsldId');
+  if (typeof dsldIdOverride === 'string' && dsldIdOverride.trim()) {
+    try {
+      const label = await getDsldLabel(dsldIdOverride.trim());
+      if (!label) {
+        return NextResponse.json({
+          matched: false,
+          reason: 'no_dsld_match',
+          message: 'Could not load that NIH record. Try scanning again.',
+        });
+      }
+      return await buildMatchedResponse(label, []);
+    } catch (err) {
+      console.error('[scan-product] variant switch failed', err instanceof Error ? err.message : err);
+      return NextResponse.json({ error: 'Could not load that record. Try again.' }, { status: 500 });
+    }
   }
 
   const file = form.get('image');
@@ -67,7 +114,8 @@ export async function POST(req: Request) {
     // shown is the manufacturer-submitted label on file, not a guess.
     const query = [identified.brandName, identified.productName].filter(Boolean).join(' ');
     const dsldHits = await searchDsldByName(query);
-    const best = pickBestMatch(dsldHits, identified.brandName);
+    const scored = scoreMatches(dsldHits, identified.brandName, identified.productName);
+    const best = scored[0]?.hit ?? null;
     if (!best) {
       return NextResponse.json({
         matched: false,
@@ -76,6 +124,24 @@ export async function POST(req: Request) {
         message: `We recognized "${query}" but it's not in NIH's supplement database yet. Try the Supplement Facts panel instead.`,
       });
     }
+
+    // Other candidates from the same search, in case the top pick is the
+    // wrong variant (e.g. a "with Vitamin C" line the photo never actually
+    // showed) -- surfaced so the user can correct a same-brand near-miss
+    // instead of silently trusting it. See scoreMatches() for why this can
+    // happen at all: DSLD's own search order isn't a reliable tiebreaker
+    // among a brand's product line.
+    const seen = new Set([`${best.fullName}|${best.brandName ?? ''}`]);
+    const alternates = scored
+      .slice(1)
+      .filter(({ hit }) => {
+        const key = `${hit.fullName}|${hit.brandName ?? ''}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 3)
+      .map(({ hit }) => ({ id: hit.id, fullName: hit.fullName, brandName: hit.brandName }));
 
     const label = await getDsldLabel(best.id);
     if (!label) {
@@ -87,25 +153,7 @@ export async function POST(req: Request) {
       });
     }
 
-    let tracked = new Set<string>();
-    try {
-      tracked = await trackedNutrientKeys();
-    } catch (err) {
-      console.warn('[scan-product] nutrient_limits lookup failed', err instanceof Error ? err.message : err);
-    }
-
-    return NextResponse.json({
-      matched: true,
-      dsldId: label.id,
-      productName: label.fullName,
-      brandName: label.brandName,
-      items: label.ingredients.map((ing) => ({
-        labelName: ing.name,
-        doseAmount: ing.amount,
-        doseUnit: ing.unit,
-        nihTracked: tracked.has(canonicalNutrient(ing.name)),
-      })),
-    });
+    return await buildMatchedResponse(label, alternates);
   } catch (err) {
     if (err instanceof LlmError) {
       console.error(`[scan-product] ${err.message}`);

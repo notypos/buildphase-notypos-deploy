@@ -64,17 +64,20 @@ See [Not yet built](#not-yet-built).
   (brand + product name, not the ingredients panel) and the same vision model
   used for the label scanner identifies what it is; that name is then looked
   up against NIH's own DSLD database and shown as the manufacturer-submitted
-  source of truth — not a re-read of a photo. Falls back to the label scanner
-  above when nothing matches. Replaces an earlier live barcode-scanning
-  version (native `BarcodeDetector` + `@zxing/browser`): built and typechecked
-  Aug 26 morning, then cut that same day when testing on the actual demo
-  hardware/browser showed decoding a real barcode off a real camera feed
-  wasn't reliable in practice, not just a theoretical browser-support gap.
-  The camera also auto-captures once the frame holds still for about a
-  second — a plain stillness check on downsampled video frames, not symbol
-  decoding, so it doesn't inherit the barcode approach's failure mode. After
-  two auto-captures in a row come back with no match, it stops guessing and
-  hands control to a manual Capture button instead of looping forever.
+  source of truth — not a re-read of a photo. A manufacturer often sells more
+  than one line under a similar name (Nature Made's plain Super B-Complex vs.
+  its "with Vitamin C" version, discovered via real testing), so the DSLD
+  match is scored on how well its name overlaps what the photo actually
+  showed rather than brand alone — and any other same-brand candidates are
+  offered as "not the right one?" alternatives to switch to, no new photo
+  needed. Falls back to the label scanner above when nothing matches at all.
+  Replaces an earlier live barcode-scanning version (native `BarcodeDetector`
+  + `@zxing/browser`): built and typechecked Aug 26 morning, then cut that
+  same day when testing on the actual demo hardware/browser showed decoding
+  a real barcode off a real camera feed wasn't reliable in practice, not just
+  a theoretical browser-support gap. Capture is a manual tap, deliberately —
+  an auto-capture-on-steady-frame version was tried Aug 26 and pulled the
+  same day for being unreliable in its own right (see `design.md`).
 - **Interaction check** — for each saved supplement, retrieves the NIH fact
   sheet and asks the model (constrained to only what's stated in the retrieved
   text) whether it names a saved medication or drug class in a
@@ -223,7 +226,8 @@ The model never decides a number. `src/lib/nih/`:
 ## Testing
 
 ```bash
-npx tsx scripts/test-units.ts           # unit conversion assertions
+npx tsx scripts/test-units.ts           # unit conversion + nutrient-name matching assertions
+npx tsx scripts/test-dsld-match.ts      # DSLD product-variant matching (no network -- synthetic hits)
 npx tsx scripts/test-life-stage.ts      # NIH row matching across ages/sexes/life stages
 npx tsx scripts/test-context-prompt.ts  # what health context actually reaches the model
 npx tsx scripts/ask.ts --suite          # retrieval threshold (needs npm run dev)
@@ -232,8 +236,28 @@ npx tsx scripts/check.ts                # preflight: env, tables, RPC, live embe
 
 ## Data source
 
-All content comes from the NIH Office of Dietary Supplements fact sheets at
-<https://ods.od.nih.gov/factsheets/list-all/> (U.S. government public domain).
+`https://ods.od.nih.gov/factsheets/list-all/` is the index the challenge's own
+resource guide points solvers at — but it is not single-domain. ODS hosts its
+own fact sheets for ~40 nutrients, minerals, and vitamins directly
+(`scripts/ingest.ts`). For herbs and botanicals (acai, turmeric, ashwagandha,
+ginseng, ...) it delegates to NCCIH, a separate NIH institute on a different
+domain (`scripts/ingest-nccih.ts`). Both are ingested into the same corpus;
+citations show which one answered via `src/lib/rag/sources.ts`.
+
+**Deliberately excluded**, evaluated and left out rather than overlooked:
+MedlinePlus's natural-products section, also linked from list-all, was
+discontinued site-wide on 2025-07-29 — every one of its ~65 links now resolves
+to the same "database is unavailable" notice, so there's nothing there to
+ingest. Other domains list-all links to (opss.org, archived AHRQ evidence
+reports, FDA notices, cancer.gov PDQ pages, NIEHS/NIDCR/NIDA one-offs, Wayback
+Machine snapshots) are heterogeneous — PDFs, legal filings, archived research
+summaries rather than consumer fact sheets — and were left out as low value
+for the scraper effort they'd cost. All U.S. government public domain content
+either way.
+
+Re-run `npx tsx scripts/ask.ts --suite` after changing what's ingested —
+adding a new source shifts the similarity distribution the 0.66 floor was
+tuned against.
 
 ## Disclaimer
 

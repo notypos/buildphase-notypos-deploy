@@ -231,15 +231,31 @@ _Nice-to-have — cut first under time pressure:_
   a re-read of a photo. Falls back to the vision-OCR scanner above when
   nothing matches, so it never dead-ends the way a database-only lookup
   would.
-- 🔨 **Not yet live-verified against DSLD** — the vision-identification half
-  is proven (same infrastructure as the working Supplement Facts scanner);
-  the DSLD search-and-fetch half is typechecked against DSLD's real response
-  shapes but this sandbox's network egress blocks api.ods.od.nih.gov, so it
-  wants one real test run with normal internet access before the Friday demo.
-- ✅ Auto-capture, added after real-device feedback — the camera snaps on its
-  own once the frame stops moving for ~1s (frame-diff stillness check, not
-  symbol decoding), then falls back to a mandatory manual Capture button
-  after two auto-attempts find no match, so it can't loop forever guessing.
+- ✅ **Live-verified against DSLD** — real-device testing hit api.ods.od.nih.gov
+  successfully and returned a correct product match on the first try
+  ("Super B-Complex," Nature Made). That same real run is what surfaced the
+  variant-matching bug below, which no sandbox test could have caught.
+- ✅ **Fixed a real correctness bug in the DSLD match itself:** a plain
+  "Super B-Complex" photo matched DSLD's "Super B-Complex WITH VITAMIN C"
+  instead — a same-brand hit with a materially different ingredient list,
+  worse than no match at all, because DSLD's own search ranked that variant
+  first and the old picker trusted brand match alone. `pickBestMatch()` /
+  `scoreMatches()` (`src/lib/dsld/client.ts` + new `src/lib/dsld/match.ts`)
+  now score on word overlap against what the vision model actually read, not
+  brand alone, and the API returns other same-brand candidates as
+  alternates so a wrong pick is correctable in the UI instead of silent.
+  Considered switching to scraping manufacturers' own websites instead of
+  DSLD, as a source of truth for the exact variant in hand — decided against
+  it for now; see `design.md`'s "Why not the manufacturer's website" for the
+  reasoning. Regression tests: `scripts/test-dsld-match.ts` (no network,
+  synthetic hits, covers the exact reported case).
+- **Auto-capture, tried and cut the same day.** Added a frame-stillness
+  auto-capture (not symbol decoding — the barcode approach's specific
+  failure) so the camera would snap on its own; real usage still found it
+  unreliable enough to pull. Reverted to the manual Capture tap. Two cuts
+  in one day for the same underlying lesson: this project's actual camera
+  hardware/lighting is the thing to test against, not just "does the
+  technique work in principle."
 - ✅ Fixed a real correctness bug: dose-safety checks were reporting "NIH has
   no limit" for nutrients NIH does track, because a label's (or the vision
   model's) wording didn't match NIH's own fact-sheet spelling — "Thiamine"

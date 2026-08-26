@@ -14,6 +14,8 @@
 import 'server-only';
 import { normalizeUnit } from '@/lib/nih/units';
 
+export { scoreMatches, pickBestMatch, type ScoredMatch } from './match';
+
 const BASE = 'https://api.ods.od.nih.gov/dsld/v9';
 
 export interface DsldSearchHit {
@@ -135,16 +137,3 @@ export async function getDsldLabel(id: string): Promise<DsldLabel | null> {
   };
 }
 
-/**
- * Small ranking heuristic, not a real relevance model: prefer a hit whose
- * brand also matches, since a UPC lookup often returns a bare product title
- * with the brand as a separate field. Good enough for a demo corpus; a real
- * deployment would want fuzzy title matching too.
- */
-export function pickBestMatch(hits: DsldSearchHit[], wantBrand: string | null): DsldSearchHit | null {
-  if (hits.length === 0) return null;
-  if (!wantBrand) return hits[0];
-  const brandLower = wantBrand.toLowerCase();
-  const brandMatch = hits.find((h) => h.brandName?.toLowerCase().includes(brandLower));
-  return brandMatch ?? hits[0];
-}

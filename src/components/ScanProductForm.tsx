@@ -12,6 +12,12 @@ interface FoundItem {
   nihTracked: boolean;
 }
 
+interface DsldAlternate {
+  id: string;
+  fullName: string;
+  brandName: string | null;
+}
+
 interface LookupResult {
   matched: boolean;
   reason?: 'not_recognized' | 'no_dsld_match';
@@ -21,6 +27,10 @@ interface LookupResult {
   brandName?: string | null;
   identified?: { brandName: string | null; productName: string | null };
   items?: FoundItem[];
+  /** Other NIH records the same search turned up -- surfaced when the auto-picked
+   * one might be the wrong variant (e.g. brand matches but a "with Vitamin C"
+   * line the photo never showed does too). See dsld/client.ts scoreMatches(). */
+  alternates?: DsldAlternate[];
 }
 
 // Same client-side downscale used by the Supplement-Facts scanner -- keeps
@@ -43,44 +53,6 @@ async function prepareImage(source: File | Blob): Promise<{ blob: Blob; type: st
   const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
   if (!blob) return { blob: source, type: source.type || 'image/jpeg' };
   return { blob, type: 'image/jpeg' };
-}
-
-// Auto-capture tuning. Deliberately simple (frame-to-frame stillness on a
-// tiny grayscale downscale) rather than any kind of symbol/shape detection --
-// that's exactly the category of thing that turned out to be unreliable on
-// real hardware for barcodes. This only ever decides *when* to take the same
-// photo a manual tap would, never what's in it.
-const AUTO_MAX_FAILS = 2;
-const AUTO_SAMPLE_INTERVAL_MS = 350;
-const AUTO_STABLE_FRAMES_NEEDED = 3;
-const AUTO_MOTION_THRESHOLD = 4;
-const AUTO_MIN_BRIGHTNESS = 15;
-const AUTO_SAMPLE_W = 32;
-const AUTO_SAMPLE_H = 24;
-
-function sampleGray(video: HTMLVideoElement, canvas: HTMLCanvasElement): Uint8ClampedArray | null {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const gray = new Uint8ClampedArray(canvas.width * canvas.height);
-  for (let i = 0; i < gray.length; i++) {
-    const o = i * 4;
-    gray[i] = data[o] * 0.299 + data[o + 1] * 0.587 + data[o + 2] * 0.114;
-  }
-  return gray;
-}
-
-function meanAbsDiff(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
-  return sum / a.length;
-}
-
-function meanBrightness(a: Uint8ClampedArray): number {
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += a[i];
-  return sum / a.length;
 }
 
 /**
@@ -109,69 +81,13 @@ export default function ScanProductForm({ onNoMatch }: { onNoMatch?: () => void 
   const [result, setResult] = useState<LookupResult | null>(null);
   const [savedNames, setSavedNames] = useState<Set<string>>(new Set());
   const [savingName, setSavingName] = useState<string | null>(null);
-
-  // Auto-capture: try it first every time the camera opens; after two
-  // consecutive misses, fall back to manual-only for the rest of this scan
-  // session (reset on "Scan another product" / retake / upload). This is
-  // NOT symbol decoding -- the thing that made barcode scanning unreliable
-  // on real hardware -- it's a plain frame-stillness heuristic: sample a
-  // tiny grayscale downscale of the video a few times a second, and once
-  // it stops changing for about a second, snap a full-res frame and run it
-  // through the same identify call a manual capture uses.
-  const [autoMode, setAutoMode] = useState(true);
-  const autoFailCountRef = useRef(0);
-  const autoBusyRef = useRef(false);
-  const prevSampleRef = useRef<Uint8ClampedArray | null>(null);
-  const stableStreakRef = useRef(0);
-  const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (cameraOpen && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
     }
   }, [cameraOpen]);
-
-  useEffect(() => {
-    if (!cameraOpen || !autoMode || scanning) return;
-    if (!sampleCanvasRef.current) {
-      const c = document.createElement('canvas');
-      c.width = AUTO_SAMPLE_W;
-      c.height = AUTO_SAMPLE_H;
-      sampleCanvasRef.current = c;
-    }
-    prevSampleRef.current = null;
-    stableStreakRef.current = 0;
-
-    const id = window.setInterval(() => {
-      if (autoBusyRef.current) return;
-      const video = videoRef.current;
-      const canvas = sampleCanvasRef.current;
-      if (!video || !canvas || video.videoWidth === 0) return;
-
-      const sample = sampleGray(video, canvas);
-      if (!sample) return;
-
-      if (meanBrightness(sample) < AUTO_MIN_BRIGHTNESS) {
-        stableStreakRef.current = 0;
-      } else if (prevSampleRef.current) {
-        const diff = meanAbsDiff(sample, prevSampleRef.current);
-        stableStreakRef.current = diff < AUTO_MOTION_THRESHOLD ? stableStreakRef.current + 1 : 0;
-      }
-      prevSampleRef.current = sample;
-
-      if (stableStreakRef.current >= AUTO_STABLE_FRAMES_NEEDED) {
-        stableStreakRef.current = 0;
-        autoBusyRef.current = true;
-        void triggerAutoCapture();
-      }
-    }, AUTO_SAMPLE_INTERVAL_MS);
-
-    return () => window.clearInterval(id);
-    // triggerAutoCapture/openCamera/closeCamera intentionally omitted: they're
-    // plain function declarations that get a new identity every render, and
-    // this loop should only restart when camera/mode/scanning actually change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraOpen, autoMode, scanning]);
 
   useEffect(() => {
     return () => {
@@ -186,8 +102,6 @@ export default function ScanProductForm({ onNoMatch }: { onNoMatch?: () => void 
     setError(null);
     setNeedsAuth(false);
     setSavedNames(new Set());
-    autoFailCountRef.current = 0;
-    setAutoMode(true);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
@@ -241,25 +155,24 @@ export default function ScanProductForm({ onNoMatch }: { onNoMatch?: () => void 
     );
   }
 
-  async function doScan(source: Blob): Promise<LookupResult> {
-    const { blob, type } = await prepareImage(source);
-    const form = new FormData();
-    form.append('image', blob, `product.${type === 'image/jpeg' ? 'jpg' : 'png'}`);
-    const res = await fetch('/api/scan-product', { method: 'POST', body: form });
-    const data = await res.json();
-    if (!res.ok) {
-      return { matched: false, message: data?.error ?? 'Could not identify that product.' };
-    }
-    return data as LookupResult;
-  }
-
   async function handleScan() {
     if (!pendingBlob || scanning) return;
     setScanning(true);
     setError(null);
     setResult(null);
+
     try {
-      setResult(await doScan(pendingBlob));
+      const { blob, type } = await prepareImage(pendingBlob);
+      const form = new FormData();
+      form.append('image', blob, `product.${type === 'image/jpeg' ? 'jpg' : 'png'}`);
+
+      const res = await fetch('/api/scan-product', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.error ?? 'Could not identify that product.');
+        return;
+      }
+      setResult(data as LookupResult);
     } catch {
       setError('Could not identify that product. Check your connection and try again.');
     } finally {
@@ -267,66 +180,26 @@ export default function ScanProductForm({ onNoMatch }: { onNoMatch?: () => void 
     }
   }
 
-  /** Fires when the auto-detect loop decides the frame has held still long enough. */
-  async function triggerAutoCapture() {
-    const video = videoRef.current;
-    if (!video || video.videoWidth === 0) {
-      autoBusyRef.current = false;
-      return;
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      autoBusyRef.current = false;
-      return;
-    }
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-    if (!blob) {
-      autoBusyRef.current = false;
-      return;
-    }
-
-    closeCamera();
-    setPendingBlob(blob);
-    setPreviewUrl(URL.createObjectURL(blob));
+  /** User said the auto-picked NIH record is the wrong variant -- re-fetch by
+   * the alternate's id directly, no new photo or vision call needed. */
+  async function switchVariant(alt: DsldAlternate) {
+    setSwitchingId(alt.id);
     setError(null);
-    setScanning(true);
-
     try {
-      const data = await doScan(blob);
-      if (data.matched) {
-        setResult(data);
+      const form = new FormData();
+      form.append('dsldId', alt.id);
+      const res = await fetch('/api/scan-product', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.error ?? 'Could not load that record.');
         return;
       }
-      autoFailCountRef.current += 1;
-      if (autoFailCountRef.current >= AUTO_MAX_FAILS) {
-        // Two misses -- stop guessing on our own and hand control back.
-        setAutoMode(false);
-        setResult(data);
-      } else {
-        // Quiet retry: don't surface a miss the user never asked about,
-        // just keep watching.
-        setResult(null);
-        setPendingBlob(null);
-        setPreviewUrl(null);
-        await openCamera();
-      }
+      setSavedNames(new Set());
+      setResult(data as LookupResult);
     } catch {
-      autoFailCountRef.current += 1;
-      if (autoFailCountRef.current >= AUTO_MAX_FAILS) {
-        setAutoMode(false);
-        setError('Could not identify that product. Check your connection and try again.');
-      } else {
-        setPendingBlob(null);
-        setPreviewUrl(null);
-        await openCamera();
-      }
+      setError('Could not load that record. Check your connection and try again.');
     } finally {
-      setScanning(false);
-      autoBusyRef.current = false;
+      setSwitchingId(null);
     }
   }
 
@@ -379,9 +252,7 @@ export default function ScanProductForm({ onNoMatch }: { onNoMatch?: () => void 
             <video ref={videoRef} autoPlay playsInline muted className="w-full" />
           </div>
           <p className="text-center text-xs text-slate-400">
-            {autoMode
-              ? 'Hold the bottle steady in frame — it captures automatically. You can also tap Capture any time.'
-              : "Auto-detect is off for this scan — frame the bottle's front and tap Capture."}
+            Frame the front of the bottle — brand and product name, not the ingredients panel.
           </p>
           <div className="flex gap-2">
             <button
@@ -451,32 +322,15 @@ export default function ScanProductForm({ onNoMatch }: { onNoMatch?: () => void 
       {result && !result.matched && (
         <div className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
           <p>{result.message}</p>
-          {!autoMode && (
-            <p className="mt-2 text-xs text-amber-800">
-              Auto-detect couldn&apos;t find a match after two tries. Line the label up yourself and
-              tap Capture.
-            </p>
+          {onNoMatch && (
+            <button
+              type="button"
+              onClick={onNoMatch}
+              className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-teal-500 hover:text-teal-700"
+            >
+              Photograph the Supplement Facts panel instead
+            </button>
           )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {!autoMode && (
-              <button
-                type="button"
-                onClick={() => openCamera()}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-teal-500 hover:text-teal-700"
-              >
-                Open camera
-              </button>
-            )}
-            {onNoMatch && (
-              <button
-                type="button"
-                onClick={onNoMatch}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-teal-500 hover:text-teal-700"
-              >
-                Photograph the Supplement Facts panel instead
-              </button>
-            )}
-          </div>
         </div>
       )}
 
@@ -490,6 +344,28 @@ export default function ScanProductForm({ onNoMatch }: { onNoMatch?: () => void 
             Sourced from NIH&apos;s Dietary Supplement Label Database, not read off the photo — this is
             the manufacturer-submitted label NIH has on file.
           </p>
+          {(result.alternates ?? []).length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+              <p className="mb-2">
+                Not the right one? Same brand, different NIH record — a manufacturer often sells more
+                than one version:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(result.alternates ?? []).map((alt) => (
+                  <button
+                    key={alt.id}
+                    type="button"
+                    onClick={() => switchVariant(alt)}
+                    disabled={switchingId !== null}
+                    className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-medium text-amber-900 hover:border-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {switchingId === alt.id ? 'Loading…' : alt.fullName}
+                    {alt.brandName ? ` — ${alt.brandName}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {(result.items ?? []).length === 0 ? (
             <p className="text-sm text-slate-500">NIH&apos;s record for this product has no listed ingredient rows.</p>
           ) : (
