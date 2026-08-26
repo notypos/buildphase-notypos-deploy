@@ -68,6 +68,11 @@ const SUITE: { q: string; expect: 'answer' | 'refuse' }[] = [
   { q: 'How do I refinance my mortgage?', expect: 'refuse' },
   { q: 'Write me a Python function to sort a list', expect: 'refuse' },
   { q: 'What is the best pre-workout brand to buy?', expect: 'refuse' },
+  // NCCIH coverage (added after the acai/MRI bug: ODS has no MRI guidance
+  // anywhere, but NCCIH's acai page explicitly warns it can affect MRI
+  // imaging of the GI tract — scripts/ingest-nccih.ts must be run first).
+  { q: 'What should I avoid taking before an MRI?', expect: 'answer' },
+  { q: 'What is turmeric used for?', expect: 'answer' },
 ];
 
 async function suite() {

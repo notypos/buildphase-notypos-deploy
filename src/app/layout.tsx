@@ -3,13 +3,13 @@ import './globals.css';
 import Nav from '@/components/Nav';
 
 export const metadata: Metadata = {
-  title: 'ClearLabel — supplement answers from NIH fact sheets',
+  title: 'ClearLabel — scan labels, check claims, read NIH evidence',
   description:
-    'Plain-language answers about dietary supplements, grounded in NIH Office of Dietary Supplements fact sheets, with citations.',
+    'A consumer health-tech app for dietary supplement questions, product labels, stack totals, and NIH-backed evidence cards.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
+    statusBarStyle: 'black-translucent',
     title: 'ClearLabel',
   },
   icons: {
@@ -22,13 +22,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0f766e',
+  themeColor: '#07111f',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-white text-slate-900 antialiased">
+      <body className="min-h-screen bg-clear-bg pb-24 text-foreground antialiased md:pb-0">
         <Nav />
         {children}
       </body>

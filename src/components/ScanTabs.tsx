@@ -15,18 +15,20 @@ export default function ScanTabs() {
   const [tab, setTab] = useState<'product' | 'photo'>('product');
 
   const tabClass = (t: typeof tab) =>
-    `rounded-lg px-3.5 py-2 text-sm font-medium transition ${
-      tab === t ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+    `rounded-md px-3.5 py-2 text-sm font-semibold transition ${
+      tab === t
+        ? 'bg-violet-300/[0.18] text-white ring-1 ring-violet-300/[0.35]'
+        : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
     }`;
 
   return (
-    <div>
-      <div className="mb-4 flex gap-2">
+    <div className="rounded-lg border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/20">
+      <div className="mb-5 inline-flex rounded-lg border border-white/10 bg-[#07111f]/70 p-1">
         <button type="button" onClick={() => setTab('product')} className={tabClass('product')}>
           Scan product
         </button>
         <button type="button" onClick={() => setTab('photo')} className={tabClass('photo')}>
-          Read nutrition label
+          Read Supplement Facts
         </button>
       </div>
       {tab === 'product' ? <ScanProductForm onNoMatch={() => setTab('photo')} /> : <ScanLabelForm />}

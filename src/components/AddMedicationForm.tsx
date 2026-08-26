@@ -52,7 +52,7 @@ export default function AddMedicationForm() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-lg bg-teal-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-teal-800"
+        className="rounded-md bg-gradient-to-r from-[#7557f8] to-[#32d1b0] px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110"
       >
         + Add a medication
       </button>
@@ -60,9 +60,9 @@ export default function AddMedicationForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-slate-200 p-4">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-white/10 bg-[#07111f]/70 p-4">
       <div>
-        <label htmlFor="med_name" className="mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="med_name" className="mb-1 block text-sm font-medium text-slate-200">
           Medication name
         </label>
         <input
@@ -73,19 +73,19 @@ export default function AddMedicationForm() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Warfarin"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+          className="w-full rounded-md border border-white/10 bg-[#081221] px-3 py-2 text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20"
         />
       </div>
 
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <p className="text-sm text-red-200">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={saving || !name.trim()}
-          className="rounded-lg bg-teal-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="rounded-md bg-white px-3.5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? 'Saving...' : 'Save'}
         </button>
         <button
           type="button"
@@ -93,7 +93,7 @@ export default function AddMedicationForm() {
             setOpen(false);
             setError(null);
           }}
-          className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
+          className="rounded-md px-3.5 py-2 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
         >
           Cancel
         </button>

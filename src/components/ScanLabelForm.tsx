@@ -47,10 +47,10 @@ async function prepareImage(source: File | Blob): Promise<{ blob: Blob; type: st
 type FrameHint = 'dark' | 'bright' | 'blurry' | 'good';
 
 const HINT_TEXT: Record<FrameHint, string> = {
-  dark: '🔅 Too dark — find more light',
-  bright: '🔆 Too bright — reduce glare',
-  blurry: '📳 Hold steady',
-  good: '✅ Looks good',
+  dark: 'Too dark - find more light',
+  bright: 'Too bright - reduce glare',
+  blurry: 'Hold steady',
+  good: 'Looks good',
 };
 
 // Cheap, local (no library, no network) live-quality read on the camera
@@ -263,7 +263,7 @@ export default function ScanLabelForm() {
     });
   }
 
-  const bracket = 'absolute h-8 w-8 border-teal-400';
+  const bracket = 'absolute h-8 w-8 border-teal-300';
 
   return (
     <div className="space-y-4">
@@ -278,8 +278,7 @@ export default function ScanLabelForm() {
 
       {cameraOpen ? (
         <div className="space-y-3">
-          <div className="relative overflow-hidden rounded-xl bg-black">
-            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <div className="relative overflow-hidden rounded-lg bg-black">
             <video ref={videoRef} autoPlay playsInline muted className="w-full" />
 
             {/* Viewfinder guide: a centered rectangle with corner brackets,
@@ -298,18 +297,18 @@ export default function ScanLabelForm() {
               </div>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={capturePhoto}
-              className="rounded-lg bg-teal-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-teal-800"
+              className="rounded-md bg-gradient-to-r from-[#7557f8] to-[#32d1b0] px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110"
             >
               Capture
             </button>
             <button
               type="button"
               onClick={closeCamera}
-              className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
+              className="rounded-md px-3.5 py-2 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
             >
               Cancel
             </button>
@@ -317,42 +316,49 @@ export default function ScanLabelForm() {
         </div>
       ) : !previewUrl ? (
         <div className="space-y-2">
-          <div className="flex flex-col gap-2 rounded-xl border-2 border-dashed border-slate-300 py-8 text-center sm:flex-row sm:justify-center sm:gap-3">
-            <button
-              type="button"
-              onClick={openCamera}
-              className="mx-auto rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 sm:mx-0"
-            >
-              🎥 Use camera
-            </button>
-            <label
-              htmlFor="scan-file-input"
-              className="mx-auto cursor-pointer rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:border-teal-500 hover:text-teal-700 sm:mx-0"
-            >
-              📁 Choose or take a photo
-            </label>
+          <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-teal-300/30 bg-[#07111f]/70 px-5 py-8 text-center">
+            <p className="max-w-md text-sm leading-relaxed text-slate-300">
+              Use this fallback when DSLD cannot identify the product. Frame the Supplement Facts
+              panel so the printed ingredient rows are readable.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+              <button
+                type="button"
+                onClick={openCamera}
+                className="mx-auto rounded-md bg-gradient-to-r from-[#7557f8] to-[#32d1b0] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 sm:mx-0"
+              >
+                Use camera
+              </button>
+              <label
+                htmlFor="scan-file-input"
+                className="mx-auto cursor-pointer rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-teal-300/40 hover:text-white sm:mx-0"
+              >
+                Choose photo
+              </label>
+            </div>
           </div>
-          {cameraError && <p className="text-sm text-red-700">{cameraError}</p>}
-          <p className="text-center text-xs text-slate-400">
-            On a phone, &quot;Choose or take a photo&quot; also offers your camera directly.
+          {cameraError && <p className="text-sm text-red-200">{cameraError}</p>}
+          <p className="text-center text-xs text-slate-500">
+            On a phone, Choose photo usually offers your camera directly.
           </p>
         </div>
       ) : (
         <div className="space-y-3">
-          <img src={previewUrl} alt="Label preview" className="max-h-72 w-full rounded-xl border border-slate-200 object-contain" />
-          <div className="flex gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={previewUrl} alt="Label preview" className="max-h-72 w-full rounded-lg border border-white/10 bg-[#07111f] object-contain" />
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={handleScan}
               disabled={scanning}
-              className="rounded-lg bg-teal-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="rounded-md bg-gradient-to-r from-[#7557f8] to-[#32d1b0] px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              {scanning ? 'Reading label…' : 'Scan label'}
+              {scanning ? 'Reading Supplement Facts...' : 'Scan label'}
             </button>
             <button
               type="button"
               onClick={resetToStart}
-              className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
+              className="rounded-md px-3.5 py-2 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
             >
               Retake photo
             </button>
@@ -360,10 +366,10 @@ export default function ScanLabelForm() {
         </div>
       )}
 
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <p className="text-sm text-red-200">{error}</p>}
       {needsAuth && (
-        <p className="text-sm text-amber-800">
-          <Link href="/login" className="font-medium underline">
+        <p className="text-sm text-amber-100">
+          <Link href="/login" className="font-semibold underline">
             Sign in
           </Link>{' '}
           to save this to My Stack.
@@ -371,16 +377,19 @@ export default function ScanLabelForm() {
       )}
 
       {result && !result.readable && (
-        <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="rounded-lg border border-amber-300/25 bg-amber-300/[0.08] p-4 text-sm text-amber-50">
           Couldn&apos;t read a Supplement Facts panel in that photo. Try again with the label flat, in
           focus, and well lit.
         </p>
       )}
 
       {result && result.readable && (
-        <div className="space-y-3 rounded-xl border border-slate-200 p-4">
-          {result.productName && <p className="text-sm font-semibold text-slate-900">{result.productName}</p>}
-          {result.note && <p className="text-xs text-slate-500">Note: {result.note}</p>}
+        <div className="space-y-4 rounded-lg border border-white/10 bg-white/[0.04] p-5">
+          <div>
+            <p className="text-sm font-semibold text-teal-100">Supplement Facts read from photo</p>
+            {result.productName && <h2 className="mt-1 text-xl font-bold text-white">{result.productName}</h2>}
+            {result.note && <p className="mt-2 text-xs text-slate-500">Note: {result.note}</p>}
+          </div>
           {result.items.length === 0 ? (
             <p className="text-sm text-slate-500">No ingredient rows were found.</p>
           ) : (
@@ -388,12 +397,12 @@ export default function ScanLabelForm() {
               {result.items.map((item, i) => {
                 const saved = savedNames.has(item.labelName);
                 return (
-                  <li key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-3">
+                  <li key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-[#07111f]/70 p-3">
                     <input
                       type="text"
                       value={item.labelName}
                       onChange={(e) => updateItem(i, { labelName: e.target.value })}
-                      className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+                      className="min-w-0 flex-1 rounded-md border border-white/10 bg-[#081221] px-2.5 py-1.5 text-sm text-white outline-none transition focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20"
                     />
                     <input
                       type="number"
@@ -404,15 +413,15 @@ export default function ScanLabelForm() {
                         updateItem(i, { doseAmount: e.target.value === '' ? null : Number(e.target.value) })
                       }
                       placeholder="dose"
-                      className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+                      className="w-24 rounded-md border border-white/10 bg-[#081221] px-2 py-1.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20"
                     />
                     <select
                       value={item.doseUnit ?? ''}
                       onChange={(e) => updateItem(i, { doseUnit: (e.target.value || null) as Unit | null })}
                       disabled={item.doseAmount === null}
-                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-slate-50 disabled:text-slate-400"
+                      className="rounded-md border border-white/10 bg-[#081221] px-2 py-1.5 text-sm text-white outline-none transition focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20 disabled:bg-white/5 disabled:text-slate-500"
                     >
-                      <option value="">—</option>
+                      <option value="">-</option>
                       {UNITS.map((u) => (
                         <option key={u} value={u}>
                           {u}
@@ -426,18 +435,20 @@ export default function ScanLabelForm() {
                           : "NIH doesn't publish a limit for this — won't be dose-checked"
                       }
                       className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                        item.nihTracked ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-500'
+                        item.nihTracked
+                          ? 'bg-teal-300/[0.15] text-teal-100 ring-1 ring-teal-300/25'
+                          : 'bg-white/5 text-slate-400 ring-1 ring-white/10'
                       }`}
                     >
-                      {item.nihTracked ? '✓ NIH-tracked' : 'ℹ no NIH limit'}
+                      {item.nihTracked ? 'NIH-tracked' : 'No NIH limit'}
                     </span>
                     <button
                       type="button"
                       onClick={() => addItem(item)}
                       disabled={saved || savingName === item.labelName || !item.labelName.trim()}
-                      className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-slate-950 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
                     >
-                      {saved ? 'Added ✓' : savingName === item.labelName ? 'Saving…' : 'Add to My Stack'}
+                      {saved ? 'Added' : savingName === item.labelName ? 'Saving...' : 'Add to My Stack'}
                     </button>
                   </li>
                 );

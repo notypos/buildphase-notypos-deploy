@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import AddStackItemForm from '@/components/AddStackItemForm';
 import DeleteStackItemButton from '@/components/DeleteStackItemButton';
 import StackCheckPanel from '@/components/StackCheckPanel';
@@ -11,8 +12,11 @@ import InteractionCheckPanel from '@/components/InteractionCheckPanel';
 interface StackItem {
   id: string;
   label_name: string;
+  supplement?: string | null;
   dose_amount: number | null;
   dose_unit: string | null;
+  frequency?: string | null;
+  ingredients?: { nutrient: string; amount: number; unit: string }[] | null;
 }
 
 interface Medication {
@@ -30,13 +34,25 @@ export default function StackTabs({
   const [tab, setTab] = useState<'supplements' | 'medications'>('supplements');
 
   const tabClass = (t: typeof tab) =>
-    `rounded-lg px-3.5 py-2 text-sm font-medium transition ${
-      tab === t ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+    `rounded-md px-3.5 py-2 text-sm font-semibold transition ${
+      tab === t
+        ? 'bg-violet-300/[0.18] text-white ring-1 ring-violet-300/[0.35]'
+        : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
     }`;
+
+  const describeIngredients = (item: StackItem) => {
+    if (item.ingredients?.length) {
+      return item.ingredients.map((i) => i.nutrient).join(', ');
+    }
+    return item.supplement || item.label_name;
+  };
+
+  const amount = (item: StackItem) =>
+    item.dose_amount != null ? `${item.dose_amount} ${item.dose_unit ?? ''}`.trim() : 'Not set';
 
   return (
     <section className="mb-6">
-      <div className="mb-3 flex gap-2">
+      <div className="mb-5 inline-flex rounded-lg border border-white/10 bg-[#07111f]/70 p-1">
         <button type="button" onClick={() => setTab('supplements')} className={tabClass('supplements')}>
           Supplements ({items.length})
         </button>
@@ -46,32 +62,112 @@ export default function StackTabs({
       </div>
 
       {tab === 'supplements' ? (
-        <div className="rounded-xl border border-slate-200 p-5">
+        <div className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
+          <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <h2 className="text-lg font-bold text-white">Your Supplements</h2>
+              <p className="mt-1 text-sm text-slate-500">Product label data and typed entries in one stack.</p>
+            </div>
+            <Link
+              href="/scan"
+              className="w-fit rounded-md border border-teal-300/25 bg-teal-300/10 px-3 py-2 text-sm font-semibold text-teal-100 transition hover:border-teal-200/50"
+            >
+              Scan Supplement
+            </Link>
+          </div>
+
           {items.length ? (
-            <ul className="mb-4 space-y-1.5 text-sm text-slate-700">
-              {items.map((i) => (
-                <li key={i.id} className="flex items-center justify-between gap-2">
-                  <span>
-                    {i.label_name}
-                    {i.dose_amount && ` — ${i.dose_amount} ${i.dose_unit ?? ''}`}
-                  </span>
-                  <DeleteStackItemButton id={i.id} />
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="hidden overflow-hidden rounded-lg border border-white/10 md:block">
+                <div className="grid grid-cols-[1.35fr_1.45fr_1fr_0.8fr_1fr_2.5rem] gap-4 border-b border-white/10 bg-[#07111f]/80 px-4 py-3 text-xs font-semibold text-slate-500">
+                  <span>Supplement</span>
+                  <span>Key Ingredients</span>
+                  <span>Amount per Serving</span>
+                  <span>Frequency</span>
+                  <span>Daily Amount</span>
+                  <span />
+                </div>
+                {items.map((i) => (
+                  <div
+                    key={i.id}
+                    className="grid grid-cols-[1.35fr_1.45fr_1fr_0.8fr_1fr_2.5rem] gap-4 border-b border-white/[0.08] px-4 py-4 text-sm text-slate-200 last:border-b-0"
+                  >
+                    <span className="min-w-0 font-semibold text-white">{i.label_name}</span>
+                    <span className="min-w-0 text-slate-400">{describeIngredients(i)}</span>
+                    <span className="font-mono text-slate-300">{amount(i)}</span>
+                    <span className="text-slate-400">{i.frequency ?? 'daily'}</span>
+                    <span className="font-mono text-slate-300">{amount(i)} / day</span>
+                    <span className="text-right">
+                      <DeleteStackItemButton id={i.id} />
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-3 md:hidden">
+                {items.map((i) => (
+                  <div key={i.id} className="rounded-lg border border-white/10 bg-[#07111f]/70 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-semibold text-white">{i.label_name}</h3>
+                        <p className="mt-1 text-sm text-slate-400">{describeIngredients(i)}</p>
+                      </div>
+                      <DeleteStackItemButton id={i.id} />
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-md bg-white/[0.04] p-3">
+                        <p className="text-xs text-slate-500">Amount</p>
+                        <p className="mt-1 font-mono text-slate-200">{amount(i)}</p>
+                      </div>
+                      <div className="rounded-md bg-white/[0.04] p-3">
+                        <p className="text-xs text-slate-500">Frequency</p>
+                        <p className="mt-1 text-slate-200">{i.frequency ?? 'daily'}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           ) : (
-            <p className="mb-4 text-sm text-slate-500">Nothing saved yet.</p>
+            <div className="mb-5 rounded-lg border border-dashed border-white/[0.15] bg-[#07111f]/70 p-8 text-center">
+              <h3 className="text-lg font-bold text-white">Your stack is empty</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-400">
+                Add supplements to see overlapping nutrients and total daily intake.
+              </p>
+              <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+                <Link
+                  href="/scan"
+                  className="rounded-md bg-gradient-to-r from-[#7557f8] to-[#32d1b0] px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Scan Supplement
+                </Link>
+                <Link
+                  href="/ask"
+                  className="rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200"
+                >
+                  Ask about an ingredient
+                </Link>
+              </div>
+            </div>
           )}
-          <AddStackItemForm />
+          <div className="mt-5">
+            <AddStackItemForm />
+          </div>
           <StackCheckPanel itemCount={items.length} />
         </div>
       ) : (
-        <div className="rounded-xl border border-slate-200 p-5">
+        <div className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
+          <div className="mb-5">
+            <h2 className="text-lg font-bold text-white">Medication interaction check</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Saved medication names are used only for the interaction check you run.
+            </p>
+          </div>
           {medications.length ? (
-            <ul className="mb-4 space-y-1.5 text-sm text-slate-700">
+            <ul className="mb-4 grid gap-2 sm:grid-cols-2">
               {medications.map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-2">
-                  <span>{m.name}</span>
+                <li key={m.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#07111f]/70 px-3 py-2 text-sm text-slate-200">
+                  <span className="font-medium text-white">{m.name}</span>
                   <DeleteMedicationButton id={m.id} />
                 </li>
               ))}

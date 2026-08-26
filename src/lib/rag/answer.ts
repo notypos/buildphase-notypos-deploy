@@ -86,7 +86,7 @@ export interface AskResult {
 const SYSTEM = `You answer questions about dietary supplements for the general public.
 
 Absolute rules:
-- Use ONLY the numbered context provided. It comes from NIH Office of Dietary Supplements fact sheets.
+- Use ONLY the numbered context provided. It comes from NIH fact sheets (the Office of Dietary Supplements and the National Center for Complementary and Integrative Health).
 - Never add facts from your own knowledge, even if you are confident they are correct.
 - Cite every factual sentence with the bracketed number of its source, like [2].
 - If the context does not answer the question, leave the relevant field as an empty string. Do not speculate.
@@ -134,7 +134,7 @@ export async function ask(
       citations: [],
       refused: true,
       refusalReason:
-        "The NIH Office of Dietary Supplements fact sheets don't cover this question. I only answer from those sources, so I don't have an answer for you here.",
+        "The NIH fact sheets in this system don't cover this question. I only answer from those sources, so I don't have an answer for you here.",
       topSimilarity,
       chunkIds: [],
     };

@@ -61,7 +61,7 @@ export default function AddStackItemForm() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-lg bg-teal-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-teal-800"
+        className="rounded-md bg-gradient-to-r from-[#7557f8] to-[#32d1b0] px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110"
       >
         + Add a supplement
       </button>
@@ -69,9 +69,9 @@ export default function AddStackItemForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-slate-200 p-4">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-white/10 bg-[#07111f]/70 p-4">
       <div>
-        <label htmlFor="label_name" className="mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="label_name" className="mb-1 block text-sm font-medium text-slate-200">
           Name, as printed on the bottle
         </label>
         <input
@@ -82,13 +82,13 @@ export default function AddStackItemForm() {
           value={labelName}
           onChange={(e) => setLabelName(e.target.value)}
           placeholder="e.g. Vitamin D3 2000 IU"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+          className="w-full rounded-md border border-white/10 bg-[#081221] px-3 py-2 text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20"
         />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label htmlFor="dose_amount" className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="dose_amount" className="mb-1 block text-sm font-medium text-slate-200">
             Dose (optional)
           </label>
           <input
@@ -99,14 +99,14 @@ export default function AddStackItemForm() {
             value={doseAmount}
             onChange={(e) => setDoseAmount(e.target.value)}
             placeholder="e.g. 50"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+            className="w-full rounded-md border border-white/10 bg-[#081221] px-3 py-2 text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20"
           />
           <p className="mt-1 text-xs text-slate-500">
             Needed for the upper-limit and cumulative-dose check.
           </p>
         </div>
         <div>
-          <label htmlFor="dose_unit" className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="dose_unit" className="mb-1 block text-sm font-medium text-slate-200">
             Unit
           </label>
           <select
@@ -114,7 +114,7 @@ export default function AddStackItemForm() {
             value={doseUnit}
             onChange={(e) => setDoseUnit(e.target.value as (typeof UNITS)[number])}
             disabled={doseAmount === ''}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-slate-50 disabled:text-slate-400"
+            className="w-full rounded-md border border-white/10 bg-[#081221] px-3 py-2 text-white outline-none transition focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20 disabled:bg-white/5 disabled:text-slate-500"
           >
             {UNITS.map((u) => (
               <option key={u} value={u}>
@@ -125,15 +125,15 @@ export default function AddStackItemForm() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <p className="text-sm text-red-200">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={saving || !labelName.trim()}
-          className="rounded-lg bg-teal-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="rounded-md bg-white px-3.5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? 'Saving...' : 'Save'}
         </button>
         <button
           type="button"
@@ -141,7 +141,7 @@ export default function AddStackItemForm() {
             setOpen(false);
             setError(null);
           }}
-          className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
+          className="rounded-md px-3.5 py-2 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white"
         >
           Cancel
         </button>

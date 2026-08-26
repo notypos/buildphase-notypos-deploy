@@ -6,21 +6,22 @@ export default function ScanPage() {
   // children) is what actually requires an account, same as the manual add
   // form.
   return (
-    <main className="mx-auto max-w-3xl px-5 py-10">
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900">Scan</h1>
-      <p className="mt-1 mb-8 text-slate-600">
-        Photograph the front of a bottle to pull NIH&apos;s own record for that product, or read
-        the Supplement Facts panel directly if it's not in NIH&apos;s database yet. Sign in to
-        add what you want to My Stack.
-      </p>
+    <main className="mx-auto min-h-screen max-w-7xl px-5 py-8 md:px-8 md:py-12">
+      <div className="mb-8 max-w-3xl">
+        <p className="mb-3 text-sm font-semibold text-clear-verified">NIH DSLD product lookup</p>
+        <h1 className="text-3xl font-bold text-white md:text-5xl">Scan a supplement</h1>
+        <p className="mt-3 text-base leading-relaxed text-slate-300">
+          Find the product label, then see what NIH says about its ingredients. Product data comes
+          from the manufacturer label in NIH DSLD; evidence comes from NIH ODS and NCCIH fact sheets.
+        </p>
+      </div>
 
       <ScanTabs />
 
-      <p className="mt-8 rounded-xl bg-teal-50 p-5 text-sm text-teal-900">
-        <span className="font-semibold">Nothing here is stored just from scanning.</span> A photo
-        is sent once to identify the product or read the printed doses, then discarded. The
-        upper-limit and cumulative-dose check that runs on My Stack never changes based on how an
-        item got there — scanned or typed in by hand.
+      <p className="mt-8 rounded-lg border border-teal-300/20 bg-teal-300/[0.08] p-5 text-sm leading-relaxed text-teal-50">
+        <span className="font-semibold">Nothing here is stored just from scanning.</span> A photo is
+        sent once to identify the product or read printed doses, then discarded. The upper-limit and
+        cumulative-dose check in My Stack is deterministic whether an item was scanned or typed.
       </p>
     </main>
   );

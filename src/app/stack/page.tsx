@@ -16,23 +16,34 @@ export default async function StackPage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-10">
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900">My Stack</h1>
-      <p className="mt-1 mb-8 text-slate-600">
-        Add what you take here so they get checked together — not one at a time. Two supplements
-        can each be fine alone but go over an NIH limit combined.
-      </p>
+    <main className="mx-auto min-h-screen max-w-7xl px-5 py-8 md:px-8 md:py-12">
+      <div className="mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+        <div>
+          <p className="mb-3 text-sm font-semibold text-clear-verified">Deterministic nutrient checks</p>
+          <h1 className="text-3xl font-bold text-white md:text-5xl">My Stack</h1>
+          <p className="mt-3 max-w-3xl text-base leading-relaxed text-slate-300">
+            Track your supplements, see overlapping nutrients, and compare totals against NIH upper
+            limits for your age, sex, and life stage.
+          </p>
+        </div>
+        <p className="rounded-lg border border-violet-300/25 bg-violet-300/[0.08] px-4 py-3 text-sm leading-relaxed text-violet-50 lg:max-w-sm">
+          The LLM does not calculate totals, duplicate ingredients, percentages, or upper-limit
+          comparisons.
+        </p>
+      </div>
 
       <StackTabs items={items ?? []} medications={medications ?? []} />
 
-      <section className="mb-6 rounded-xl border border-slate-200 p-5">
-        <h2 className="mb-3 text-xs font-bold tracking-wide text-slate-500 uppercase">
+      <section className="mb-6 rounded-lg border border-white/10 bg-white/[0.04] p-5">
+        <h2 className="mb-3 text-base font-bold text-white">
           Saved Decision Cards ({cards?.length ?? 0})
         </h2>
         {cards?.length ? (
-          <ul className="space-y-1 text-sm text-slate-700">
+          <ul className="space-y-2 text-sm text-slate-300">
             {cards.map((c) => (
-              <li key={c.id}>{c.title}</li>
+              <li key={c.id} className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2">
+                {c.title}
+              </li>
             ))}
           </ul>
         ) : (
@@ -40,7 +51,7 @@ export default async function StackPage() {
         )}
       </section>
 
-      <p className="rounded-xl bg-teal-50 p-5 text-sm text-teal-900">
+      <p className="rounded-lg border border-teal-300/20 bg-teal-300/[0.08] p-5 text-sm leading-relaxed text-teal-50">
         <span className="font-semibold">What&apos;s saved, and why.</span> Age, sex, and pregnancy
         status stay in your browser tab only — never saved. Supplements, medications you add for
         the interaction check, and cards you explicitly save are stored to your account. We still

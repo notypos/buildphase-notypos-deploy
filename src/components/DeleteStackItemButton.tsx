@@ -24,9 +24,9 @@ export default function DeleteStackItemButton({ id }: { id: string }) {
       disabled={deleting}
       aria-label="Remove"
       title="Remove"
-      className="text-slate-400 hover:text-red-700 disabled:opacity-50"
+      className="rounded-md px-2 py-1 text-slate-500 transition hover:bg-red-300/10 hover:text-red-100 disabled:opacity-50"
     >
-      {deleting ? '…' : '✕'}
+      {deleting ? '...' : 'x'}
     </button>
   );
 }

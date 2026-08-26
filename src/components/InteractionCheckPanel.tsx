@@ -108,12 +108,12 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
   }
 
   return (
-    <div className="mt-6 space-y-4 rounded-xl border border-slate-200 p-5">
+    <div className="mt-6 space-y-4 rounded-lg border border-white/10 bg-[#07111f]/70 p-5">
       <div>
-        <h3 className="mb-1 text-xs font-bold tracking-wide text-slate-500 uppercase">
+        <h3 className="mb-1 text-lg font-bold text-white">
           Check supplements against your medications
         </h3>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm leading-relaxed text-slate-400">
           Type in supplements to check, or scan a label to add one, then pick which medications to
           check them against.
         </p>
@@ -123,14 +123,14 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
         <p className="text-sm text-slate-500">Add a medication above first.</p>
       ) : (
         <fieldset className="space-y-1.5">
-          <legend className="mb-1 text-sm font-medium text-slate-700">Medications to check</legend>
+          <legend className="mb-1 text-sm font-medium text-slate-200">Medications to check</legend>
           {medications.map((m) => (
-            <label key={m.id} className="flex items-center gap-2 text-sm text-slate-700">
+            <label key={m.id} className="flex items-center gap-2 text-sm text-slate-300">
               <input
                 type="checkbox"
                 checked={selected.has(m.id)}
                 onChange={() => toggle(m.id)}
-                className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600"
+                className="h-4 w-4 rounded border-white/20 bg-[#081221] text-teal-300 focus:ring-teal-300"
               />
               {m.name}
             </label>
@@ -139,7 +139,7 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
       )}
 
       <div>
-        <label htmlFor="interaction-names" className="mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="interaction-names" className="mb-1 block text-sm font-medium text-slate-200">
           Supplements to check (comma or new line separated)
         </label>
         <textarea
@@ -148,7 +148,7 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
           onChange={(e) => setNamesText(e.target.value)}
           placeholder="e.g. Vitamin K, St. John's Wort"
           rows={2}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+          className="w-full rounded-md border border-white/10 bg-[#081221] px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20"
         />
         <div className="mt-2 flex items-center gap-2">
           <input
@@ -161,9 +161,9 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
           />
           <label
             htmlFor="interaction-scan-input"
-            className="cursor-pointer rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-teal-500 hover:text-teal-700"
+            className="cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-teal-300/40 hover:text-white"
           >
-            {scanning ? 'Reading…' : '📷 Scan to add a name'}
+            {scanning ? 'Reading...' : 'Scan to add a name'}
           </label>
         </div>
       </div>
@@ -172,16 +172,16 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
         type="button"
         onClick={runCheck}
         disabled={checking || parseNames(namesText).length === 0 || selected.size === 0}
-        className="rounded-lg bg-teal-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="rounded-md bg-gradient-to-r from-[#7557f8] to-[#32d1b0] px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
       >
-        {checking ? 'Checking…' : 'Check for interactions'}
+        {checking ? 'Checking...' : 'Check for interactions'}
       </button>
 
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <p className="text-sm text-red-200">{error}</p>}
 
       {result && (
         <div className="space-y-2">
-          <p className="text-sm text-slate-700">{result.summary}</p>
+          <p className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm text-slate-200">{result.summary}</p>
           {result.uncovered.length > 0 && (
             <p className="text-xs text-slate-500">
               Not covered by an NIH fact sheet: {result.uncovered.join(', ')}
@@ -191,11 +191,13 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
             <div
               key={i}
               className={`rounded-lg border p-3 text-sm ${
-                f.flagged ? 'border-red-300 bg-red-50 text-red-900' : 'border-slate-200 bg-slate-50 text-slate-600'
+                f.flagged
+                  ? 'border-red-300/30 bg-red-300/10 text-red-50'
+                  : 'border-white/10 bg-white/[0.04] text-slate-300'
               }`}
             >
               <p className="font-semibold">
-                {f.flagged ? '⚠️ Mentioned' : 'Not mentioned'} · {f.supplement} + {f.medication}
+                {f.flagged ? 'Mentioned' : 'Not mentioned'} - {f.supplement} + {f.medication}
               </p>
               <p className="mt-1">{f.detail}</p>
             </div>
