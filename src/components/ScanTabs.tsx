@@ -1,18 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import BarcodeScanForm from '@/components/BarcodeScanForm';
+import ScanProductForm from '@/components/ScanProductForm';
 import ScanLabelForm from '@/components/ScanLabelForm';
 
 /**
- * Two scanning modes, matching the dual input BioStacks uses: a barcode scan
- * that pulls NIH's own record as source of truth (see /api/product-lookup),
- * falling back to the existing vision-OCR label reader when a product isn't
- * in NIH's database yet or the barcode isn't recognized -- reading the label
- * directly never "dead-ends" the way a database-only lookup would.
+ * Two scanning modes. "Scan product" photographs the front of the bottle
+ * and matches it to NIH's own DSLD record (source of truth, not a re-read
+ * of a photo) -- see /api/scan-product. "Read nutrition label" is the
+ * original vision-OCR reader, kept as the fallback for anything not in
+ * NIH's database yet, so scanning never dead-ends.
  */
 export default function ScanTabs() {
-  const [tab, setTab] = useState<'barcode' | 'photo'>('barcode');
+  const [tab, setTab] = useState<'product' | 'photo'>('product');
 
   const tabClass = (t: typeof tab) =>
     `rounded-lg px-3.5 py-2 text-sm font-medium transition ${
@@ -22,14 +22,14 @@ export default function ScanTabs() {
   return (
     <div>
       <div className="mb-4 flex gap-2">
-        <button type="button" onClick={() => setTab('barcode')} className={tabClass('barcode')}>
-          Scan barcode
+        <button type="button" onClick={() => setTab('product')} className={tabClass('product')}>
+          Scan product
         </button>
         <button type="button" onClick={() => setTab('photo')} className={tabClass('photo')}>
-          Photograph label
+          Read nutrition label
         </button>
       </div>
-      {tab === 'barcode' ? <BarcodeScanForm onNoMatch={() => setTab('photo')} /> : <ScanLabelForm />}
+      {tab === 'product' ? <ScanProductForm onNoMatch={() => setTab('photo')} /> : <ScanLabelForm />}
     </div>
   );
 }

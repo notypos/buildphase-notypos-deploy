@@ -418,7 +418,7 @@ documents…"* — never *"based on your medical history, this is safe for you."
 | GET | `/api/health` | none | Verify every configured secret against its real dependency; `?deep=1` adds a live embedding + generation call | ✅ |
 | — | `/api/stack` | — | **Does not exist.** Stack CRUD goes directly from the browser to Supabase (`stack_items`, `medications`) via the anon key, authorized by RLS — no custom route layer. | n/a by design |
 | — | `/api/claim-check` | — | Never built — feature cut, see `plan.md` "Explicitly cut" | 📋 |
-| POST | `/api/product-lookup` | none | Barcode → UPC database → DSLD source-of-truth lookup (below); no user data touched | ✅ (untested live — see note) |
+| POST | `/api/scan-product` | none, deliberately | Photo of a bottle's front → identified product → DSLD source-of-truth record; no user data touched | ✅ (see caveat below) |
 
 ### `POST /api/ask` ✅
 
@@ -561,9 +561,9 @@ vision candidates failed), 500 (unexpected). Same `LlmError.userMessage`
 convention as `/api/ask` — no provider text or stack traces reach the client,
 and image bytes are never logged.
 
-### `POST /api/product-lookup` ✅ (untested against live network calls)
+### `POST /api/scan-product` ✅ (DSLD half untested against live network calls)
 
-**Request:** `{ "barcode": "0511111519171" }`
+**Request:** multipart form data, one `image` file of the product's front label.
 
 **Response 200 — matched**
 
@@ -577,21 +577,31 @@ and image bytes are never logged.
 }
 ```
 
-**Response 200 — no match** (either hop failed): `{ "matched": false, "reason":
-"no_upc_match" | "no_dsld_match", "message": "..." }` — the UI reads `reason`
-to decide whether to just retry the scan or switch to the vision-OCR tab.
+**Response 200 — no match:** `{ "matched": false, "reason": "not_recognized" |
+"no_dsld_match", "identified"?: {...}, "message": "..." }` — the UI reads
+`reason` to decide whether to just retry or switch to the vision-OCR tab.
 
-Two hops, both to external services this app didn't previously call:
-UPCitemdb's free "trial" tier (no key, ~100 lookups/day, resolves
-barcode → product name) and NIH's DSLD API (`api.ods.od.nih.gov/dsld/v9`,
-free, no key — `search-filter` then `label/{id}`, verified live against real
-responses on Aug 26, unlike the barcode-only claim in earlier drafts of this
-doc). DSLD has no barcode endpoint of its own, which is why the UPC hop
-exists at all. **Caveat:** the running server has never actually made these
-two calls — this project's dev sandbox blocks egress to both hosts, so the
-integration is typechecked and lint-clean against real, verified response
-shapes, but not yet exercised end to end. First real test happens wherever
-this runs with normal internet access.
+Two steps chained: `identifyProduct()` (`src/lib/vision/identify-product.ts`)
+sends the photo through the same `VISION_MODEL_CANDIDATES` fallback chain the
+Supplement Facts scanner uses, but asks only for a brand and product name —
+much smaller ask of the model than transcribing a full ingredients table, and
+this half is exercised by the same infrastructure already proven live.
+`searchDsldByName()` / `getDsldLabel()` (`src/lib/dsld/client.ts`) then hit
+NIH's DSLD API, verified live against real responses on Aug 26. **Caveat:**
+the DSLD half has never actually been exercised end to end from a running
+server — this dev sandbox blocks egress to api.ods.od.nih.gov, so it's
+typechecked against a real, verified schema but not live-tested. First real
+test happens wherever this runs with normal internet access.
+
+**Replaced approach:** an earlier same-day version of this route (`/api/product-
+lookup`) resolved a scanned *barcode* to a product via a UPC database
+(UPCitemdb) before searching DSLD, using live camera barcode detection
+(native `BarcodeDetector`, falling back to `@zxing/browser`). Built,
+typechecked, and reasoned through carefully — then cut later the same day
+after testing on the actual demo hardware/browser showed the barcode
+detection itself was unreliable in practice. See "Two barcode-detection
+engines, not one" in §8 for the fuller postmortem, kept here rather than
+deleted since it explains a real decision, not a mistake to hide.
 
 ### `POST /api/interactions` ✅
 
@@ -931,6 +941,19 @@ that check fails — which is unconditional on Safari/iOS, where
 `BarcodeDetector` isn't implemented at all. This matters for a live demo
 specifically: "works on the developer's laptop" is not the same claim as
 "works on whatever device is in front of a judge."
+
+**Update, later the same day: cut.** Both engines were built and reasoned
+through carefully, but testing on the actual browser/hardware this project
+will be demoed on showed live barcode detection itself was unreliable in
+practice — not the browser-support gap this section anticipated, a
+different, more basic problem with decoding a real barcode off a real
+camera feed in real time. Replaced with `/api/scan-product`: photograph the
+product's front label instead, let the already-working vision model (used
+elsewhere in this project for the Supplement Facts panel) read the brand and
+product name, and search DSLD by that. Same downstream DSLD lookup, no
+client-side barcode decoding at all. This section is kept rather than
+deleted because the reasoning about format-detection reliability is still
+correct — it just turned out not to be the thing that broke.
 
 ### A fallback chain for vision, not for text generation
 

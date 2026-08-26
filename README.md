@@ -60,15 +60,16 @@ See [Not yet built](#not-yet-built).
   sign-in required to scan — reading a photo touches no one's data — but saving
   the result requires an account. Tries three model candidates in order and
   falls through if one doesn't support images.
-- **Barcode scanner** — scans live via the camera, entirely client-side, using
-  the browser's native `BarcodeDetector` when it actually supports the needed
-  formats (checked at runtime, not just feature-detected — some Chrome builds
-  expose the API but omit UPC-A) and falling back to `@zxing/browser`
-  otherwise, notably on Safari/iOS where the native API doesn't exist at all.
-  Either way, the decoded code resolves through a free UPC database to a
-  product name, then looks that name up in NIH's own DSLD database and shows
-  the manufacturer-submitted label as the source of truth — not a re-read of
-  a photo. Falls back to the label scanner above when nothing matches.
+- **Scan product** (`/api/scan-product`) — photograph the front of the bottle
+  (brand + product name, not the ingredients panel) and the same vision model
+  used for the label scanner identifies what it is; that name is then looked
+  up against NIH's own DSLD database and shown as the manufacturer-submitted
+  source of truth — not a re-read of a photo. Falls back to the label scanner
+  above when nothing matches. Replaces an earlier live barcode-scanning
+  version (native `BarcodeDetector` + `@zxing/browser`): built and typechecked
+  Aug 26 morning, then cut that same day when testing on the actual demo
+  hardware/browser showed decoding a real barcode off a real camera feed
+  wasn't reliable in practice, not just a theoretical browser-support gap.
 - **Interaction check** — for each saved supplement, retrieves the NIH fact
   sheet and asks the model (constrained to only what's stated in the retrieved
   text) whether it names a saved medication or drug class in a
@@ -86,10 +87,12 @@ See [Not yet built](#not-yet-built).
   (`DatosEnEspanol`) NIH fact sheets were never run through
   `scripts/ingest.ts --lang es`. The language toggle was removed from the UI on
   Aug 25 rather than ship a control that would silently fail.
-- **Live verification of the barcode lookup** — the barcode → UPC database →
-  DSLD chain (below) is typechecked and lint-clean but hasn't been exercised
-  against real network calls yet; the dev sandbox used to build it can't
-  reach either external API.
+- **Live verification of the DSLD lookup** — the vision-identification half
+  of `/api/scan-product` is proven (same infrastructure as the working label
+  scanner); the DSLD search-and-fetch half is typechecked against DSLD's real
+  response shapes but hasn't been exercised against a live network call yet —
+  no sandbox used to build it could reach `api.ods.od.nih.gov`. Wants one real
+  test run before the Friday demo.
 
 ## AI integration
 
@@ -102,7 +105,7 @@ See [Not yet built](#not-yet-built).
 | Grounding                   | answers are generated only from retrieved chunks; chunk ids stored per message                                               |
 | Refusal                     | below a measured cosine floor of 0.66 the app refuses and never calls the model                                              |
 | Failure handling            | 429 → 1/2/4s backoff · 5xx → 5/10/20s backoff · wall-clock timeouts                                                          |
-| Vision (label scan)         | Three model candidates tried in order (`gpt-5.4` → `gemini-2.5-pro` → `gemini-3.6-flash`) — Trussed's image support was unverified, so this discovers it at runtime |
+| Vision (label scan + product ID) | Same three-candidate fallback chain (`gpt-5.4` → `gemini-2.5-pro` → `gemini-3.6-flash`) backs both the label-transcription scanner and the front-label product-identification scanner — Trussed's image support was unverified, so this discovers it at runtime |
 | Second RAG feature          | `/api/interactions` retrieves each supplement's fact sheet + safety sections and asks the model to report only what's stated about a saved medication — never infers safety from silence |
 
 Embeddings are Gemini-only — Trussed doesn't expose a working `/embeddings`

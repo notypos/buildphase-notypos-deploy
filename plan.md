@@ -222,22 +222,20 @@ _Nice-to-have — cut first under time pressure:_
 - ✅ Label scan — shipped Aug 26 as vision-model OCR (`src/app/scan`,
   `src/lib/vision/scan-label.ts`): a photo is transcribed directly into structured
   doses.
-- ✅ Barcode → NIH source-of-truth lookup — added Aug 26 (later same day),
-  `src/lib/upc/lookup.ts` + `src/lib/dsld/client.ts` + `/api/product-lookup`.
-  DSLD has no barcode endpoint of its own, so a scanned barcode first resolves
-  to a product name via a free, keyless UPC database (UPCitemdb trial tier,
-  ~100 lookups/day, no new cost), then that name is searched against NIH's
-  DSLD API to pull the manufacturer-submitted label as the source of truth —
-  not a re-read of a photo. The scan itself uses two engines: the browser's
-  native `BarcodeDetector` when it actually reports support for UPC/EAN
-  formats (some Chrome builds expose the API but not those formats — checked
-  live, not assumed), falling back to `@zxing/browser` everywhere else,
-  including Safari/iOS where no native implementation exists at all. Falls back to the vision-OCR scanner above when
-  either step finds no match, so it never dead-ends the way a database-only
-  lookup would. **Not yet live-verified end to end** — this sandbox's network
-  egress blocks both api.upcitemdb.com and api.ods.od.nih.gov, so the chain
-  is typechecked and lint-clean but wants a real test run with normal
-  internet access before the Friday demo.
+- ✅ Photo → NIH source-of-truth lookup — `src/lib/vision/identify-product.ts`
+  + `src/lib/dsld/client.ts` + `/api/scan-product`. A photo of the front of
+  the bottle (brand + product name, not the ingredients panel) goes through
+  the same vision-model chain the Supplement Facts scanner uses, returning
+  just a brand/product name; that name is then searched against NIH's DSLD
+  API to pull the manufacturer-submitted label as the source of truth — not
+  a re-read of a photo. Falls back to the vision-OCR scanner above when
+  nothing matches, so it never dead-ends the way a database-only lookup
+  would.
+- 🔨 **Not yet live-verified against DSLD** — the vision-identification half
+  is proven (same infrastructure as the working Supplement Facts scanner);
+  the DSLD search-and-fetch half is typechecked against DSLD's real response
+  shapes but this sandbox's network egress blocks api.ods.od.nih.gov, so it
+  wants one real test run with normal internet access before the Friday demo.
 - ✅ Supplement × medication interaction check — shipped Aug 26
   (`src/lib/rag/interactions.ts`, `/api/interactions`). Required reintroducing a
   `medications` table (migration `0003`, reversing part of the Aug privacy
@@ -255,7 +253,13 @@ and three of the eight Phase 1 concepts already occupy that space); **Claim Chec
 personalization and dose-checking that shipped instead); **agentic multi-step
 orchestration** for the stack scan (kept deterministic instead — the reasoning in
 §2.2.2 held: an agent that can decide to skip the upper-limit check is a liability
-in a safety feature, so it was never worth building even as a stretch goal).
+in a safety feature, so it was never worth building even as a stretch goal) **Live
+barcode scanning** (native `BarcodeDetector` + `@zxing/browser`, built and
+typechecked Aug 26 morning — cut that same day after testing on the actual
+demo hardware/browser showed it unreliable in practice, not just a
+theoretical browser-support gap. Replaced with photographing the front label
+and letting the existing vision model identify the product instead, see
+§2.2.2).
 
 #### 2.2.2 Agentic AI and RAG
 
