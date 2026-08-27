@@ -181,7 +181,7 @@ export default function StackTabs({
             </div>
           )}
           <AddMedicationForm />
-          <InteractionCheckPanel medications={medications} />
+          <InteractionCheckPanel medications={medications} items={items} />
         </div>
       )}
     </section>

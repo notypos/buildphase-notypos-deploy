@@ -151,6 +151,22 @@ function scoreMedicationMention(row: {
   return matchedTerms * 10 + (section.includes('interact') ? 5 : 0) + (section.includes('harm') ? 2 : 0);
 }
 
+function scoreSafetySection(row: {
+  section: string | null;
+  subsection: string | null;
+  content: string;
+}): number {
+  const heading = `${row.section ?? ''} ${row.subsection ?? ''}`.toLowerCase();
+  const content = row.content.toLowerCase();
+  return (
+    (heading.includes('interact') ? 100 : 0) +
+    (heading.includes('medication') ? 20 : 0) +
+    (heading.includes('harm') || heading.includes('safety') ? 60 : 0) +
+    (content.includes('warfarin') || content.includes('blood thinner') || content.includes('anticoagulant') ? 15 : 0) +
+    (heading.includes('health') ? 5 : 0)
+  );
+}
+
 /**
  * For medication questions, semantic search can find the first relevant
  * interaction but still miss other sheets that mention the same drug. This
@@ -289,6 +305,7 @@ export async function retrieveSafetySections(
 
   return ((data ?? []) as unknown as Row[])
     .filter((r) => !have.has(r.id) && r.fact_sheets)
+    .sort((a, b) => scoreSafetySection(b) - scoreSafetySection(a))
     .slice(0, limit)
     .map((r) => ({
       chunk_id: r.id,

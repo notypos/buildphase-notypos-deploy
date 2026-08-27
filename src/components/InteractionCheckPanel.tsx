@@ -1,10 +1,17 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 interface Medication {
   id: string;
   name: string;
+}
+
+interface StackItem {
+  id: string;
+  label_name: string;
+  supplement?: string | null;
+  ingredients?: { nutrient: string; amount: number; unit: string }[] | null;
 }
 
 interface Finding {
@@ -18,29 +25,53 @@ interface InteractionResult {
   findings: Finding[];
   summary: string;
   uncovered: string[];
-}
-
-function parseNames(raw: string): string[] {
-  return raw
-    .split(/[,\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  failed: string[];
 }
 
 /**
- * Free-typed (or scanned) supplement names checked against selected saved
+ * Which name to check each stack item under. Ingredient-level nutrient names
+ * (e.g. "Vitamin K") match NIH's single-nutrient fact sheets far better than
+ * a branded product name, so those are preferred when the item has them.
+ */
+function deriveCheckNames(items: StackItem[]): string[] {
+  const names = new Set<string>();
+  for (const item of items) {
+    if (item.ingredients?.length) {
+      for (const ing of item.ingredients) {
+        const n = ing.nutrient?.trim();
+        if (n) names.add(n);
+      }
+    } else {
+      const n = (item.supplement || item.label_name)?.trim();
+      if (n) names.add(n);
+    }
+  }
+  return [...names];
+}
+
+/**
+ * Checks the supplements already in your stack against selected saved
  * medications, grounded in retrieved NIH fact sheet text — see
  * src/lib/rag/interactions.ts. Separate from the dose-safety check above:
  * this is about interaction claims in free text, not a dose-vs-limit sum.
+ *
+ * No free-typed supplement box: the point of the check is "does anything
+ * I've already added interact with what I'm on," so it runs against your
+ * saved stack automatically rather than asking you to retype names.
  */
-export default function InteractionCheckPanel({ medications }: { medications: Medication[] }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+export default function InteractionCheckPanel({
+  medications,
+  items,
+}: {
+  medications: Medication[];
+  items: StackItem[];
+}) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [namesText, setNamesText] = useState('');
-  const [scanning, setScanning] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InteractionResult | null>(null);
+
+  const supplementNames = useMemo(() => deriveCheckNames(items), [items]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -51,38 +82,7 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
     });
   }
 
-  async function onScanFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setScanning(true);
-    setError(null);
-    try {
-      const form = new FormData();
-      form.append('image', file);
-      const res = await fetch('/api/scan', { method: 'POST', body: form });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data?.error ?? 'Could not read that label.');
-        return;
-      }
-      const found: string[] = data.readable
-        ? [data.productName, ...(data.items ?? []).map((i: { labelName: string }) => i.labelName)].filter(Boolean)
-        : [];
-      if (found.length === 0) {
-        setError("Couldn't read a supplement name from that photo.");
-        return;
-      }
-      setNamesText((prev) => (prev.trim() ? `${prev.trim()}, ${found.join(', ')}` : found.join(', ')));
-    } catch {
-      setError('Could not read that photo. Try again.');
-    } finally {
-      setScanning(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  }
-
   async function runCheck() {
-    const supplementNames = parseNames(namesText);
     if (supplementNames.length === 0 || selected.size === 0 || checking) return;
     setChecking(true);
     setError(null);
@@ -107,15 +107,16 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
     }
   }
 
-  const canRun = parseNames(namesText).length > 0 && selected.size > 0;
+  const canRun = supplementNames.length > 0 && selected.size > 0;
+  const flaggedFindings = result?.findings.filter((f) => f.flagged) ?? [];
 
   return (
     <div className="mt-6 space-y-5 rounded-lg border border-white/10 bg-[#07111f]/70 p-5">
       <div>
-        <h3 className="text-lg font-bold text-white">Check supplements against your medications</h3>
+        <h3 className="text-lg font-bold text-white">Check your supplements against your medications</h3>
         <p className="mt-1 text-sm leading-relaxed text-slate-400">
-          Type in supplements to check, or scan a label to add one, then pick which medications to
-          check them against.
+          Pick which medications to check, then press the button — every supplement already in
+          your stack is checked automatically.
         </p>
       </div>
 
@@ -150,33 +151,23 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
       </div>
 
       <div>
-        <label htmlFor="interaction-names" className="mb-2 block text-sm font-medium text-slate-200">
-          2. Supplements to check
-        </label>
-        <textarea
-          id="interaction-names"
-          value={namesText}
-          onChange={(e) => setNamesText(e.target.value)}
-          placeholder="e.g. Vitamin K, St. John's Wort"
-          rows={2}
-          className="w-full rounded-md border border-white/10 bg-[#081221] px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20"
-        />
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={onScanFile}
-            className="hidden"
-            id="interaction-scan-input"
-          />
-          <label
-            htmlFor="interaction-scan-input"
-            className="cursor-pointer rounded-md border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-xs font-semibold text-teal-100 transition hover:border-teal-200/50"
-          >
-            {scanning ? 'Reading...' : 'Scan to add a name'}
-          </label>
-        </div>
+        <p className="mb-2 text-sm font-medium text-slate-200">2. Supplements checked (from your stack)</p>
+        {supplementNames.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-white/[0.15] px-4 py-3 text-sm text-slate-500">
+            Add a supplement in the Supplements tab first.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {supplementNames.map((name) => (
+              <span
+                key={name}
+                className="rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-sm text-slate-300"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <button
@@ -198,34 +189,34 @@ export default function InteractionCheckPanel({ medications }: { medications: Me
               Not covered by an NIH fact sheet: {result.uncovered.join(', ')}
             </p>
           )}
-          <div className="space-y-2">
-            {result.findings.map((f, i) => (
-              <div
-                key={i}
-                className={`rounded-lg border p-3 text-sm ${
-                  f.flagged
-                    ? 'border-red-300/30 bg-red-300/10 text-red-50'
-                    : 'border-white/10 bg-white/[0.04] text-slate-300'
-                }`}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-[0.7rem] font-semibold whitespace-nowrap ${
-                      f.flagged
-                        ? 'border-red-300/40 bg-red-300/15 text-red-100'
-                        : 'border-white/10 bg-white/5 text-slate-400'
-                    }`}
-                  >
-                    {f.flagged ? 'Mentioned' : 'Not mentioned'}
-                  </span>
-                  <span className="font-semibold">
-                    {f.supplement} + {f.medication}
-                  </span>
+          {result.failed.length > 0 && (
+            <p className="text-xs text-amber-200">
+              Couldn&apos;t complete the check for: {result.failed.join(', ')} — try again in a moment.
+            </p>
+          )}
+
+          {flaggedFindings.length === 0 ? (
+            <p className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm text-slate-300">
+              No interactions mentioned in NIH&apos;s fact sheets for the supplements and medications
+              checked.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {flaggedFindings.map((f, i) => (
+                <div key={i} className="rounded-lg border border-red-300/30 bg-red-300/10 p-3 text-sm text-red-50">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-red-300/40 bg-red-300/15 px-2 py-0.5 text-[0.7rem] font-semibold whitespace-nowrap text-red-100">
+                      Mentioned
+                    </span>
+                    <span className="font-semibold">
+                      {f.supplement} + {f.medication}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 leading-relaxed">{f.detail}</p>
                 </div>
-                <p className="mt-1.5 leading-relaxed">{f.detail}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
