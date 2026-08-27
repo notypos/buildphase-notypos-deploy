@@ -3,7 +3,7 @@ import './globals.css';
 import Nav from '@/components/Nav';
 
 export const metadata: Metadata = {
-  title: 'ClearLabel — scan labels, check claims, read NIH evidence',
+  title: 'ClearLabel - Ask NIH supplement evidence',
   description:
     'A consumer health-tech app for dietary supplement questions, product labels, stack totals, and NIH-backed evidence cards.',
   manifest: '/manifest.json',

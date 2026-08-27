@@ -24,7 +24,7 @@ export default function Home() {
         <div className="flex flex-col justify-center">
           <p className="mb-4 inline-flex w-fit items-center gap-2 rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-sm font-semibold text-teal-100">
             <span className="h-1.5 w-1.5 rounded-full bg-clear-verified" />
-            Scan the label. Check the claim. See the evidence.
+            Scan the label. Ask NIH Evidence.
           </p>
           <h1 className="max-w-3xl text-4xl font-bold leading-[1.05] text-white md:text-6xl">
             See what NIH actually knows{' '}
@@ -43,7 +43,7 @@ export default function Home() {
             className="mt-8 max-w-2xl rounded-lg border border-white/10 bg-white/[0.04] p-4 shadow-2xl shadow-black/20"
           >
             <label htmlFor="home-ask" className="mb-3 block text-sm font-semibold text-slate-200">
-              Ask ClearLabel anything
+              Ask NIH Evidence
             </label>
             <div className="flex flex-col gap-3 sm:flex-row">
               <input
@@ -57,7 +57,7 @@ export default function Home() {
                 type="submit"
                 className="min-h-12 rounded-md bg-gradient-to-r from-[#7557f8] to-[#32d1b0] px-5 font-semibold text-white transition hover:brightness-110"
               >
-                Ask
+                Ask NIH Evidence
               </button>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">

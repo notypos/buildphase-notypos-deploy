@@ -25,10 +25,8 @@ const READING_LEVELS = [
 const EXAMPLES = [
   'How much magnesium should I get at age 67?',
   'Does ashwagandha actually reduce stress?',
-  'This bottle says clinically proven to improve sleep. Is that supported?',
+  'Is a supplement claim about better sleep supported?',
 ];
-
-type AskMode = 'general' | 'claim';
 
 interface Citation {
   index: number;
@@ -98,24 +96,12 @@ function EvidenceCard({
   );
 }
 
-function claimStatus(answer: AskResult['answer']) {
-  if (!answer) return { label: 'Insufficient ODS Evidence', className: 'border-slate-400/25 bg-slate-300/10 text-slate-200' };
-  if (answer.marketing || answer.uncertainty) {
-    return { label: 'Mixed / Limited', className: 'border-amber-300/[0.35] bg-amber-300/[0.12] text-amber-100' };
-  }
-  if (answer.evidence) return { label: 'Supports', className: 'border-teal-300/[0.35] bg-teal-300/[0.12] text-teal-100' };
-  return { label: 'Does Not Establish', className: 'border-red-300/[0.35] bg-red-300/10 text-red-100' };
-}
-
 export default function AskExperience({
   initialQuestion = '',
-  initialMode = 'general',
 }: {
   initialQuestion?: string;
-  initialMode?: AskMode;
 }) {
   const [question, setQuestion] = useState(initialQuestion);
-  const [mode, setMode] = useState<AskMode>(initialMode);
   const [context, setContext] = useState<HealthContext>(EMPTY_CONTEXT);
   const [levelOverride, setLevelOverride] = useState<string | null>(null);
   const language: 'en' | 'es' = 'en';
@@ -233,7 +219,6 @@ export default function AskExperience({
   }
 
   const a = result?.answer;
-  const status = claimStatus(a ?? null);
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-5 py-8 md:px-8 md:py-12">
@@ -242,8 +227,8 @@ export default function AskExperience({
           <p className="mb-3 text-sm font-medium text-clear-verified">NIH evidence workspace</p>
           <h1 className="text-3xl font-bold text-white md:text-5xl">Ask ClearLabel</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-300">
-            Ask about a supplement, ingredient, dosage, or marketing claim. ClearLabel answers from
-            NIH fact sheets and keeps uncertainty visible.
+            Ask about a supplement, ingredient, dosage, or label claim. ClearLabel answers from NIH
+            fact sheets and keeps uncertainty visible.
           </p>
         </div>
         <Link
@@ -263,41 +248,15 @@ export default function AskExperience({
             }}
             className="space-y-4"
           >
-            <div className="inline-flex rounded-lg border border-white/10 bg-[#07111f]/70 p-1">
-              {(
-                [
-                  ['general', 'General Question'],
-                  ['claim', 'Check a Claim'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setMode(id)}
-                  className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-                    mode === id
-                      ? 'bg-violet-400/[0.18] text-white shadow-sm'
-                      : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
             <label htmlFor="question" className="block text-sm font-semibold text-slate-200">
-              {mode === 'claim' ? 'Supplement marketing claim' : 'Question'}
+              Ask NIH Evidence
             </label>
             <textarea
               id="question"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               rows={7}
-              placeholder={
-                mode === 'claim'
-                  ? 'Paste or type a supplement marketing claim...'
-                  : 'Ask anything about dietary supplements...'
-              }
+              placeholder="Ask a question or paste a supplement label claim..."
               className="w-full resize-none rounded-lg border border-white/10 bg-[#081221] px-4 py-3 text-base text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300/55 focus:ring-2 focus:ring-violet-400/20"
             />
 
@@ -338,7 +297,7 @@ export default function AskExperience({
               disabled={loading || !question.trim()}
               className="w-full rounded-md bg-gradient-to-r from-[#7557f8] to-[#32d1b0] px-5 py-3 font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              {loading ? 'Building your Evidence Card...' : mode === 'claim' ? 'Check claim' : 'Ask'}
+              {loading ? 'Building your Evidence Card...' : 'Ask NIH Evidence'}
             </button>
           </form>
 
@@ -362,7 +321,7 @@ export default function AskExperience({
               <p className="text-sm font-semibold text-clear-verified">Ready when you are</p>
               <h2 className="mt-3 text-2xl font-bold text-white">Evidence, uncertainty, and sources stay separated.</h2>
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-400">
-                Try a nutrient question, paste a product claim, or add age and sex only when NIH
+                Try a nutrient question, paste a label claim, or add age and sex only when NIH
                 recommendations differ by those values.
               </p>
             </div>
@@ -409,28 +368,16 @@ export default function AskExperience({
               <div className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                   <div>
-                    <p className="text-sm font-medium text-clear-verified">
-                      {mode === 'claim' ? 'Claim Check Result' : 'NIH ODS Evidence Result'}
-                    </p>
+                    <p className="text-sm font-medium text-clear-verified">NIH Evidence Result</p>
                     <h2 className="mt-2 text-2xl font-bold text-white">
-                      {mode === 'claim' ? 'Evidence status for this claim' : `${asked.slice(0, 72)}${asked.length > 72 ? '...' : ''}`}
+                      {asked.slice(0, 72)}
+                      {asked.length > 72 ? '...' : ''}
                     </h2>
                     {hasAnyContext(context) && (
                       <p className="mt-2 text-sm text-slate-400">Based on your profile: {summarize(context)}</p>
                     )}
                   </div>
-                  {mode === 'claim' && (
-                    <span className={`rounded-full border px-3 py-1.5 text-xs font-bold ${status.className}`}>
-                      {status.label}
-                    </span>
-                  )}
                 </div>
-                {mode === 'claim' && (
-                  <div className="mt-4 rounded-lg border border-white/10 bg-[#07111f]/70 p-4">
-                    <p className="text-xs font-semibold text-slate-500">Claim</p>
-                    <p className="mt-1 text-sm leading-relaxed text-slate-200">{asked}</p>
-                  </div>
-                )}
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
@@ -440,7 +387,7 @@ export default function AskExperience({
                   </EvidenceCard>
                 )}
                 {a.evidence && (
-                  <EvidenceCard title={mode === 'claim' ? 'What NIH ODS Says' : 'What NIH Says'} tone="evidence">
+                  <EvidenceCard title="What NIH Says" tone="evidence">
                     <p>{withMarkers(a.evidence)}</p>
                   </EvidenceCard>
                 )}
@@ -460,7 +407,7 @@ export default function AskExperience({
                   </EvidenceCard>
                 )}
                 {a.uncertainty && (
-                  <EvidenceCard title={mode === 'claim' ? "What's Uncertain" : "What's Not Known"} tone="uncertainty">
+                  <EvidenceCard title="What's Not Known" tone="uncertainty">
                     <p>{withMarkers(a.uncertainty)}</p>
                   </EvidenceCard>
                 )}
