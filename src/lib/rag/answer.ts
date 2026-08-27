@@ -4,9 +4,11 @@ import { generateStructured, LlmError } from '@/lib/llm';
 import {
   retrieve,
   retrieveSafetySections,
+  retrieveMedicationMentionSections,
   formatContext,
   toCitations,
   dedupeCitations,
+  mergeChunks,
   type DisplayCitation,
 } from './retrieve';
 import type { HealthContext } from '@/lib/health-context';
@@ -65,6 +67,16 @@ const OptionalClinicianQuestions = z.preprocess(
   z.array(z.string().max(300)).max(4).optional(),
 );
 const CitationIndex = z.coerce.number().int().positive();
+
+const MEDICATION_CLASS_TERMS: Record<string, string[]> = {
+  enalapril: ['ace inhibitors', 'angiotensin converting enzyme inhibitors'],
+  lisinopril: ['ace inhibitors', 'angiotensin converting enzyme inhibitors'],
+  captopril: ['ace inhibitors', 'angiotensin converting enzyme inhibitors'],
+  benazepril: ['ace inhibitors', 'angiotensin converting enzyme inhibitors'],
+  losartan: ['angiotensin receptor blockers'],
+  valsartan: ['angiotensin receptor blockers'],
+  warfarin: ['warfarin', 'blood thinners', 'anticoagulants'],
+};
 
 /**
  * The three core fields come from the project problem statement: separate
@@ -181,9 +193,46 @@ function normalizeCitations(answer: Answer, maxIndex: number): Answer {
   return { ...answer, citationsUsed };
 }
 
+function isMedicationQuestion(question: string): boolean {
+  return /\b(avoid|interact|interaction|interactions|medication|medications|drug|drugs|medicine|prescription|with|taking|while taking)\b/i.test(
+    question,
+  );
+}
+
+function extractMedicationTerms(question: string): string[] {
+  const terms: string[] = [];
+  const patterns = [
+    /\b(?:avoid\s+with|interact(?:s|ions?)?\s+with|with|while\s+taking|taking|on)\s+([a-z][a-z0-9-]*(?:\s+[a-z][a-z0-9-]*){0,2})/gi,
+    /\b([a-z][a-z0-9-]*(?:\s+[a-z][a-z0-9-]*)?)\s+(?:interaction|interactions)\b/gi,
+  ];
+  const stopAfter = /\b(?:and|or|because|while|when|if|what|which|supplement|supplements|vitamin|vitamins|mineral|minerals|herb|herbs)\b/i;
+  const blocked = new Set([
+    'supplement',
+    'supplements',
+    'medication',
+    'medications',
+    'medicine',
+    'drugs',
+    'drug',
+    'need',
+    'avoid',
+    'taking',
+  ]);
+
+  for (const pattern of patterns) {
+    for (const match of question.matchAll(pattern)) {
+      const raw = match[1]?.split(stopAfter)[0]?.trim().toLowerCase();
+      if (!raw || blocked.has(raw)) continue;
+      terms.push(raw);
+    }
+  }
+
+  const expanded = terms.flatMap((term) => [term, ...(MEDICATION_CLASS_TERMS[term] ?? [])]);
+  return [...new Set(expanded)].slice(0, 6);
+}
+
 function quotedDrug(question: string): string {
-  const match = question.match(/\bwith\s+([a-z0-9-]+)|\bavoid\s+with\s+([a-z0-9-]+)|\bwhile\s+taking\s+([a-z0-9-]+)/i);
-  return match?.[1] ?? match?.[2] ?? match?.[3] ?? 'my medication';
+  return extractMedicationTerms(question)[0] ?? 'my medication';
 }
 
 function fallbackAnswer(question: string, chunks: ReturnType<typeof toCitations>): Answer {
@@ -213,6 +262,56 @@ function fallbackAnswer(question: string, chunks: ReturnType<typeof toCitations>
   };
 }
 
+function medicationMentionGuide(allChunks: ReturnType<typeof toCitations>, directChunkIds: Set<string>, terms: string[]) {
+  const bySupplement = new Map<string, { indices: number[]; sections: Set<string> }>();
+  for (const citation of allChunks) {
+    if (!directChunkIds.has(citation.chunkId)) continue;
+    const existing = bySupplement.get(citation.supplement) ?? { indices: [], sections: new Set<string>() };
+    existing.indices.push(citation.index);
+    if (citation.section) existing.sections.add(citation.section);
+    bySupplement.set(citation.supplement, existing);
+  }
+
+  const rows = [...bySupplement.entries()].map(([supplement, value]) => ({
+    supplement,
+    indices: [...new Set(value.indices)].sort((a, b) => a - b),
+    section: [...value.sections][0] ?? null,
+  }));
+
+  if (rows.length === 0) return null;
+
+  const primary = terms[0] ?? 'the medication';
+  const med =
+    terms.includes('ace inhibitors')
+      ? `${primary} (ACE inhibitors)`
+      : terms.includes('angiotensin receptor blockers')
+        ? `${primary} (angiotensin receptor blockers)`
+        : primary;
+  const list = rows
+    .map((row) => {
+      const marker = row.indices.map((i) => `[${i}]`).join('');
+      return `- ${row.supplement} ${marker}`;
+    })
+    .join('\n');
+
+  return {
+    rows,
+    text: `NIH sources in this corpus explicitly mention ${med} with:\n${list}\nThis is not a complete drug-interaction review.`,
+  };
+}
+
+function addMedicationMentionGuide(answer: Answer, guide: ReturnType<typeof medicationMentionGuide>): Answer {
+  if (!guide) return answer;
+  const current = answer.medicationInteractions ?? '';
+  const medicationInteractions = current.startsWith('NIH sources in this corpus explicitly mention')
+    ? current
+    : [guide.text, current].filter(Boolean).join('\n\n');
+  const citationsUsed = [
+    ...new Set([...answer.citationsUsed, ...guide.rows.flatMap((row) => row.indices)]),
+  ].sort((a, b) => a - b);
+  return { ...answer, medicationInteractions, citationsUsed };
+}
+
 export async function ask(
   question: string,
   {
@@ -224,8 +323,10 @@ export async function ask(
   // NOTE: only `question` is embedded. Health context is NEVER part of a
   // retrieval query — see the guard in src/lib/embeddings.ts.
   const { chunks, topSimilarity, belowThreshold } = await retrieve(question, { language });
+  const medicationTerms = isMedicationQuestion(question) ? extractMedicationTerms(question) : [];
+  const medicationChunks = await retrieveMedicationMentionSections(medicationTerms, { language });
 
-  if (belowThreshold) {
+  if (belowThreshold && medicationChunks.length === 0) {
     return {
       answer: null,
       citations: [],
@@ -241,8 +342,26 @@ export async function ask(
   // search landed on. Semantic search misses these whenever the question does
   // not mention drugs or conditions, which is most of the time — and those
   // sections are exactly where condition and interaction guidance lives.
-  const safetyChunks = await retrieveSafetySections(chunks);
-  const allChunks = [...chunks, ...safetyChunks];
+  const seedChunks = mergeChunks(medicationChunks, chunks);
+  const safetyChunks = await retrieveSafetySections(seedChunks);
+  const allChunks = mergeChunks(medicationChunks, chunks, safetyChunks);
+  const allCitations = toCitations(allChunks);
+  const directGuide = medicationMentionGuide(
+    allCitations,
+    new Set(medicationChunks.map((c) => c.chunk_id)),
+    medicationTerms,
+  );
+  const medicationMode = directGuide
+    ? `\nMedication-interaction question detected.
+- In "medicationInteractions", list EVERY supplement topic in this direct NIH mention list.
+- Keep "evidence" to 1-2 short sentences. Put the detailed interaction list only in "medicationInteractions".
+- Use short bullet-style lines separated by newlines.
+- Leave "marketing" empty unless the user specifically asks about a label or advertising claim.
+- Say this is what the retrieved NIH sources explicitly mention, not a complete drug-interaction review.
+
+Direct NIH mention list:
+${directGuide.text}\n`
+    : '';
 
   let answer: Answer;
   try {
@@ -251,6 +370,7 @@ export async function ask(
       prompt: `Reader: ${AUDIENCE_STYLE[audience]}${ageEmphasis(healthContext?.ageYears)}
 ${describeContext(healthContext)}
 Question: ${question}
+${medicationMode}
 
 Context:
 ${formatContext(allChunks)}
@@ -262,15 +382,16 @@ questionsForClinician (optional), citationsUsed.`,
       maxTokens: 2048,
     });
     answer = normalizeCitations(answer, allChunks.length);
+    answer = addMedicationMentionGuide(answer, directGuide);
   } catch (err) {
     if (!(err instanceof LlmError) || err.code !== 'SCHEMA_VALIDATION_FAILED') throw err;
     console.warn(`[ask] structured answer formatting failed; returning cited fallback for topSimilarity=${topSimilarity.toFixed(3)}`);
-    answer = fallbackAnswer(question, toCitations(allChunks));
+    answer = addMedicationMentionGuide(fallbackAnswer(question, allCitations), directGuide);
   }
 
   return {
     answer,
-    citations: dedupeCitations(toCitations(allChunks), answer.citationsUsed),
+    citations: dedupeCitations(allCitations, answer.citationsUsed),
     refused: false,
     topSimilarity,
     chunkIds: allChunks.map((c) => c.chunk_id),

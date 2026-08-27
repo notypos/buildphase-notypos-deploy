@@ -130,6 +130,97 @@ export function dedupeCitations(citations: Citation[], used?: number[]): Display
   return [...bySection.values()].sort((a, b) => a.indices[0] - b.indices[0]);
 }
 
+export function mergeChunks(...groups: RetrievedChunk[][]): RetrievedChunk[] {
+  const byId = new Map<string, RetrievedChunk>();
+  for (const group of groups) {
+    for (const chunk of group) {
+      if (!byId.has(chunk.chunk_id)) byId.set(chunk.chunk_id, chunk);
+    }
+  }
+  return [...byId.values()];
+}
+
+function scoreMedicationMention(row: {
+  section: string | null;
+  subsection: string | null;
+  content: string;
+}, terms: string[]): number {
+  const haystack = `${row.section ?? ''} ${row.subsection ?? ''} ${row.content}`.toLowerCase();
+  const matchedTerms = terms.filter((term) => haystack.includes(term.toLowerCase())).length;
+  const section = `${row.section ?? ''} ${row.subsection ?? ''}`.toLowerCase();
+  return matchedTerms * 10 + (section.includes('interact') ? 5 : 0) + (section.includes('harm') ? 2 : 0);
+}
+
+/**
+ * For medication questions, semantic search can find the first relevant
+ * interaction but still miss other sheets that mention the same drug. This
+ * direct text pass asks the ground store: "which NIH chunks explicitly name
+ * this medication or drug class?" It still returns only NIH corpus chunks; no
+ * model knowledge is involved.
+ */
+export async function retrieveMedicationMentionSections(
+  terms: string[],
+  {
+    audience = 'consumer',
+    language = 'en',
+    limit = 24,
+  }: { audience?: 'consumer' | 'health_professional'; language?: 'en' | 'es'; limit?: number } = {},
+): Promise<RetrievedChunk[]> {
+  const cleanTerms = [...new Set(terms.map((term) => term.trim()).filter((term) => /^[a-z0-9 -]{3,}$/i.test(term)))].slice(0, 4);
+  if (cleanTerms.length === 0) return [];
+
+  const supabase = createServiceClient();
+  const filters = cleanTerms.flatMap((term) => [
+    `content.ilike.%${term}%`,
+    `section.ilike.%${term}%`,
+    `subsection.ilike.%${term}%`,
+  ]);
+
+  const { data, error } = await supabase
+    .from('chunks')
+    .select('id, fact_sheet_id, section, subsection, content, fact_sheets!inner(slug, supplement, source_url, audience, language)')
+    .eq('fact_sheets.audience', audience)
+    .eq('fact_sheets.language', language)
+    .or(filters.join(','))
+    .limit(60);
+
+  if (error) {
+    console.warn(`[retrieval] medication mention fetch failed: ${error.message}`);
+    return [];
+  }
+
+  type Row = {
+    id: string;
+    fact_sheet_id: string;
+    section: string | null;
+    subsection: string | null;
+    content: string;
+    fact_sheets: {
+      slug: string;
+      supplement: string;
+      source_url: string;
+      audience: string;
+      language: string;
+    } | null;
+  };
+
+  return ((data ?? []) as unknown as Row[])
+    .filter((r) => r.fact_sheets)
+    .sort((a, b) => scoreMedicationMention(b, cleanTerms) - scoreMedicationMention(a, cleanTerms))
+    .slice(0, limit)
+    .map((r) => ({
+      chunk_id: r.id,
+      fact_sheet_id: r.fact_sheet_id,
+      slug: r.fact_sheets!.slug,
+      supplement: r.fact_sheets!.supplement,
+      section: r.section,
+      subsection: r.subsection,
+      content: r.content,
+      source_url: r.fact_sheets!.source_url,
+      similarity: 0,
+    }));
+}
+
 
 /**
  * Sections that carry condition and drug-interaction guidance.

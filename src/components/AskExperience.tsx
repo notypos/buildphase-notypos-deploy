@@ -91,7 +91,7 @@ function EvidenceCard({
   return (
     <section className={`rounded-lg border p-5 ${tones[tone]}`}>
       <h3 className="mb-2 text-sm font-semibold text-white">{title}</h3>
-      <div className="space-y-2 text-[0.95rem] leading-relaxed text-slate-200">{children}</div>
+      <div className="space-y-2 whitespace-pre-line text-[0.95rem] leading-relaxed text-slate-200">{children}</div>
     </section>
   );
 }
