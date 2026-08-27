@@ -11,7 +11,7 @@ Plain-language answers about dietary supplements, grounded in NIH Office of Diet
 | Artifact                  | Link                                                                           |
 | ------------------------- | ------------------------------------------------------------------------------ |
 | Deployed application      | <https://buildphase-notypos.vercel.app>                                       |
-| Demo video (3–5 min)      | Hosted video URL needed before Canvas submission; script: [`demo-video-script.md`](demo-video-script.md) |
+| Demo video (3–5 min)      | <https://www.loom.com/share/cf4591f19ac94c378be65a9e04b68b34> |
 | Pitch deck                | [`docs/ClearLabel_Pitch_Deck.pptx`](docs/ClearLabel_Pitch_Deck.pptx)           |
 | One-page showcase summary | [`docs/ClearLabel_Showcase_Intent.pptx`](docs/ClearLabel_Showcase_Intent.pptx) |
 | Showcase handout          | [`docs/SHOWCASE_HANDOUT.md`](docs/SHOWCASE_HANDOUT.md)                         |
