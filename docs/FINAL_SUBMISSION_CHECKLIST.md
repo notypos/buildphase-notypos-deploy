@@ -19,9 +19,6 @@ August 26, 2026.
 - Q&A preparation is committed.
 - Showcase handout is committed.
 - Demo video script is committed.
-
-## Must Be Confirmed By Ike
-
 - Final GitHub Classroom repository URL submitted on Canvas.
 - Intent-to-participate PowerPoint submitted on Canvas by the August 19 deadline.
 - Demo video uploaded to YouTube, Vimeo, or another accessible host.
