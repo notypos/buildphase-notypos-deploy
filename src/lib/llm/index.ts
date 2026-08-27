@@ -266,6 +266,23 @@ function stripFences(text: string): string {
 }
 
 /**
+ * Best-effort fallback when the model wraps valid JSON in prose despite
+ * `json: true` / "reply with JSON only" instructions — seen in practice on
+ * sensitive-sounding questions (e.g. drug-interaction wording), where the
+ * underlying model prepends a disclaimer sentence before the object even
+ * though the endpoint requested JSON-object mode. Takes the outermost
+ * {...} span rather than giving up outright. Naive (no brace-depth
+ * matching), but a corrupted result still fails schema validation below,
+ * so this can only help, never silently accept garbage.
+ */
+function extractJsonObject(text: string): string | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  return text.slice(start, end + 1);
+}
+
+/**
  * Generate and validate against a zod schema. Every structured feature —
  * evidence cards, claim verdicts, agent findings — goes through here so a
  * malformed model response becomes a typed error instead of a runtime crash
@@ -284,18 +301,27 @@ export async function generateStructured<T>(
         : `${opts.prompt}\n\nYour previous reply did not match the required JSON shape (${lastIssue}). Reply with valid JSON only, no prose, no code fences.`;
 
     const raw = await generate({ ...opts, prompt, json: true });
+    const stripped = stripFences(raw);
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(stripFences(raw));
+      parsed = JSON.parse(stripped);
     } catch {
-      lastIssue = 'response was not valid JSON';
-      continue;
+      const extracted = extractJsonObject(stripped);
+      try {
+        if (!extracted) throw new Error('no braces found');
+        parsed = JSON.parse(extracted);
+      } catch {
+        lastIssue = 'response was not valid JSON';
+        console.error(`[structured] pass ${pass} produced non-JSON output — raw (first 800 chars): ${raw.slice(0, 800)}`);
+        continue;
+      }
     }
 
     const result = schema.safeParse(parsed);
     if (result.success) return result.data;
     lastIssue = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ').slice(0, 300);
+    console.error(`[structured] pass ${pass} failed schema validation (${lastIssue}) — raw (first 800 chars): ${raw.slice(0, 800)}`);
   }
 
   throw new LlmError(`Structured output failed validation: ${lastIssue}`, {
