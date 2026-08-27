@@ -11,12 +11,20 @@ Plain-language answers about dietary supplements, grounded in NIH Office of Diet
 | Artifact                  | Link                                                                           |
 | ------------------------- | ------------------------------------------------------------------------------ |
 | Deployed application      | <https://buildphase-notypos.vercel.app>                                       |
-| Demo video (3–5 min)      | _TODO_                                                                         |
-| Pitch deck                | _TODO_                                                                         |
+| Demo video (3–5 min)      | Hosted video URL needed before Canvas submission; script: [`demo-video-script.md`](demo-video-script.md) |
+| Pitch deck                | [`docs/ClearLabel_Pitch_Deck.pptx`](docs/ClearLabel_Pitch_Deck.pptx)           |
 | One-page showcase summary | [`docs/ClearLabel_Showcase_Intent.pptx`](docs/ClearLabel_Showcase_Intent.pptx) |
+| Showcase handout          | [`docs/SHOWCASE_HANDOUT.md`](docs/SHOWCASE_HANDOUT.md)                         |
 | Project plan              | [`plan.md`](plan.md)                                                           |
 | Technical design          | [`design.md`](design.md)                                                       |
+| Setup/deployment guide    | [`docs/SETUP.md`](docs/SETUP.md)                                               |
+| API documentation         | [`docs/API.md`](docs/API.md)                                                   |
+| Architecture overview     | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                                 |
 | Database schema           | [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), [`0002_privacy.sql`](supabase/migrations/0002_privacy.sql), [`0003_medications.sql`](supabase/migrations/0003_medications.sql) |
+| Security/testing/cost     | [`docs/SECURITY_TESTING_COST.md`](docs/SECURITY_TESTING_COST.md)               |
+| Demo backup plan          | [`docs/DEMO_BACKUP_PLAN.md`](docs/DEMO_BACKUP_PLAN.md)                         |
+| Showcase Q&A prep         | [`docs/SHOWCASE_QA.md`](docs/SHOWCASE_QA.md)                                   |
+| Final submission checklist | [`docs/FINAL_SUBMISSION_CHECKLIST.md`](docs/FINAL_SUBMISSION_CHECKLIST.md)     |
 | Retrieval evaluation      | See [Retrieval quality](#retrieval-quality) below                             |
 | Production health check   | [`/api/health`](https://buildphase-notypos.vercel.app/api/health) · [`/health`](https://buildphase-notypos.vercel.app/health) |
 

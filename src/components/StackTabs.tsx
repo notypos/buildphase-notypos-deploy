@@ -63,17 +63,9 @@ export default function StackTabs({
 
       {tab === 'supplements' ? (
         <div className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
-          <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-            <div>
-              <h2 className="text-lg font-bold text-white">Your Supplements</h2>
-              <p className="mt-1 text-sm text-slate-500">Product label data and typed entries in one stack.</p>
-            </div>
-            <Link
-              href="/scan"
-              className="w-fit rounded-md border border-teal-300/25 bg-teal-300/10 px-3 py-2 text-sm font-semibold text-teal-100 transition hover:border-teal-200/50"
-            >
-              Scan Supplement
-            </Link>
+          <div className="mb-5">
+            <h2 className="text-lg font-bold text-white">Your Supplements</h2>
+            <p className="mt-1 text-sm text-slate-500">Product label data and typed entries in one stack.</p>
           </div>
 
           {items.length ? (
@@ -158,22 +150,35 @@ export default function StackTabs({
       ) : (
         <div className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
           <div className="mb-5">
-            <h2 className="text-lg font-bold text-white">Medication interaction check</h2>
+            <h2 className="text-lg font-bold text-white">Your Medications</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Saved medication names are used only for the interaction check you run.
+              Used only for the interaction check below — never shared elsewhere.
             </p>
           </div>
+
           {medications.length ? (
-            <ul className="mb-4 grid gap-2 sm:grid-cols-2">
+            <ul className="mb-6 grid gap-2 sm:grid-cols-2">
               {medications.map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#07111f]/70 px-3 py-2 text-sm text-slate-200">
-                  <span className="font-medium text-white">{m.name}</span>
+                <li
+                  key={m.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#07111f]/70 px-3.5 py-3"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-300/[0.14] text-xs font-semibold text-violet-100 ring-1 ring-violet-300/[0.25]">
+                      {m.name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="truncate text-sm font-medium text-white">{m.name}</span>
+                  </span>
                   <DeleteMedicationButton id={m.id} />
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mb-4 text-sm text-slate-500">Nothing saved yet.</p>
+            <div className="mb-6 rounded-lg border border-dashed border-white/[0.15] bg-[#07111f]/70 p-6 text-center">
+              <p className="text-sm leading-relaxed text-slate-400">
+                Add a medication to check your supplements against it for known interactions.
+              </p>
+            </div>
           )}
           <AddMedicationForm />
           <InteractionCheckPanel medications={medications} />
